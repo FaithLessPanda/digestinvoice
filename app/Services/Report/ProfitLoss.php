@@ -270,7 +270,7 @@ class ProfitLoss
     {
         $this->invoice_payment_map = [];
 
-        Payment::where('company_id', $this->company->id)
+        Payment::query()->where('company_id', $this->company->id)
                         ->whereIn('status_id', [1, 4, 5])
                         ->where('is_deleted', 0)
                         ->whereBetween('date', [$this->start_date, $this->end_date])
@@ -293,7 +293,7 @@ class ProfitLoss
 
                             foreach ($payment->paymentables as $pivot) {
                                 if ($pivot->paymentable_type == 'invoices') {
-                                    $invoice = Invoice::withTrashed()->find($pivot->paymentable_id);
+                                    $invoice = Invoice::query()->withTrashed()->find($pivot->paymentable_id);
 
                                     $amount_payment_paid += $pivot->amount - $pivot->refunded;
                                     $amount_payment_paid_converted += $amount_payment_paid / ($payment->exchange_rate ?: 1);
@@ -366,7 +366,7 @@ class ProfitLoss
 
         $csv->insertOne(['--------------------']);
 
-        $csv->insertOne([ctrans('texts.total_revenue'), Number::formatMoney($this->income, $this->company)]);
+        $csv->insertOne([ctrans('texts.total_revenue'), Number::formatMoney($this->income - $this->income_taxes, $this->company)]);
 
         //total taxes
 
@@ -386,7 +386,7 @@ class ProfitLoss
         $csv->insertOne([ctrans('texts.total_taxes'), Number::formatMoney(array_sum(array_column($this->expense_break_down, 'tax')), $this->company)]);
 
         $csv->insertOne(['--------------------']);
-        $csv->insertOne([ctrans('texts.total_profit'), Number::formatMoney($this->income - array_sum(array_column($this->expense_break_down, 'total')), $this->company)]);
+        $csv->insertOne([ctrans('texts.total_profit'), Number::formatMoney($this->income - $this->income_taxes - array_sum(array_column($this->expense_break_down, 'total'))- array_sum(array_column($this->expense_break_down, 'tax')), $this->company)]);
 
         //net profit
 
@@ -452,7 +452,7 @@ class ProfitLoss
 
     private function expenseData()
     {
-        $expenses = Expense::where('company_id', $this->company->id)
+        $expenses = Expense::query()->where('company_id', $this->company->id)
                            ->where('is_deleted', 0)
                            ->withTrashed()
                            ->whereBetween('date', [$this->start_date, $this->end_date])

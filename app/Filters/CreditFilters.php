@@ -88,6 +88,11 @@ class CreditFilters extends QueryFilters
                           ->orWhere('credits.custom_value4', 'like', '%'.$filter.'%')
                           ->orWhereHas('client', function ($q) use ($filter) {
                               $q->where('name', 'like', '%'.$filter.'%');
+                          })
+                          ->orWhereHas('client.contacts', function ($q) use ($filter) {
+                              $q->where('first_name', 'like', '%'.$filter.'%')
+                                ->orWhere('last_name', 'like', '%'.$filter.'%')
+                                ->orWhere('email', 'like', '%'.$filter.'%');
                           });
         });
     }
@@ -113,6 +118,11 @@ class CreditFilters extends QueryFilters
 
         if (!is_array($sort_col) || count($sort_col) != 2) {
             return $this->builder;
+        }
+
+        if ($sort_col[0] == 'client_id') {
+            return $this->builder->orderBy(\App\Models\Client::select('name')
+                    ->whereColumn('clients.id', 'credits.client_id'), $sort_col[1]);
         }
 
         return $this->builder->orderBy($sort_col[0], $sort_col[1]);

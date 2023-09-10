@@ -408,7 +408,7 @@ class ProductController extends BaseController
     /**
      * Perform bulk actions on the list view.
      *
-     * @return Collection
+     * @return \Illuminate\Support\Collection
      *
      *
      * @OA\Post(
@@ -541,7 +541,7 @@ class ProductController extends BaseController
         }
 
         if ($request->has('documents')) {
-            $this->saveDocuments($request->file('documents'), $product);
+            $this->saveDocuments($request->file('documents'), $product, $request->input('is_public', true));
         }
 
         return $this->itemResponse($product->fresh());

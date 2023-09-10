@@ -49,7 +49,7 @@ class ExpenseController extends BaseController
     protected $entity_transformer = ExpenseTransformer::class;
 
     /**
-     * @var ExpensRepository
+     * @var ExpenseRepository
      */
     protected $expense_repo;
 
@@ -72,7 +72,7 @@ class ExpenseController extends BaseController
      *      summary="Gets a list of expenses",
      *      description="Lists expenses, search and filters allow fine grained lists to be generated.
 
-    Query parameters can be added to performed more fine grained filtering of the expenses, these are handled by the ExpenseFilters class which defines the methods available",
+     *      Query parameters can be added to performed more fine grained filtering of the expenses, these are handled by the ExpenseFilters class which defines the methods available",
      *      @OA\Parameter(ref="#/components/parameters/X-API-TOKEN"),
      *      @OA\Parameter(ref="#/components/parameters/X-Requested-With"),
      *      @OA\Parameter(ref="#/components/parameters/include"),
@@ -564,7 +564,7 @@ class ExpenseController extends BaseController
         }
 
         if ($request->has('documents')) {
-            $this->saveDocuments($request->file('documents'), $expense);
+            $this->saveDocuments($request->file('documents'), $expense, $request->input('is_public', true));
         }
 
         return $this->itemResponse($expense->fresh());

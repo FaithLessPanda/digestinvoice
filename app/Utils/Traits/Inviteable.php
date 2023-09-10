@@ -68,6 +68,8 @@ trait Inviteable
 
         $qr = $writer->writeString($this->getPaymentLink(), 'utf-8');
 
+        return "<div>$qr</div>";
+
         return "<svg class='pqrcode' viewBox='0 0 200 200' width='200' height='200' x='0' y='0' xmlns='http://www.w3.org/2000/svg'>
           <rect x='0' y='0' width='100%' height='100%' />{$qr}</svg>";
     }
@@ -77,7 +79,7 @@ trait Inviteable
         if (Ninja::isHosted()) {
             $domain = $this->company->domain();
         } else {
-            $domain = strlen($this->company->portal_domain) > 5 ? $this->company->portal_domain : config('ninja.app_url');
+            $domain = strlen($this->company->portal_domain ?? '') > 5 ? $this->company->portal_domain : config('ninja.app_url');
         }
 
         $entity_type = Str::snake(class_basename($this->entityType()));
@@ -92,7 +94,7 @@ trait Inviteable
         if (Ninja::isHosted()) {
             $domain = $this->company->domain();
         } else {
-            $domain = strlen($this->company->portal_domain) > 5 ? $this->company->portal_domain : config('ninja.app_url');
+            $domain = strlen($this->company->portal_domain ?? '') > 5 ? $this->company->portal_domain : config('ninja.app_url');
         }
 
         switch ($this->company->portal_mode) {
@@ -101,7 +103,6 @@ trait Inviteable
                 break;
             case 'iframe':
                 return $domain.'/client/'.$entity_type.'/'.$this->key;
-                //return $domain . $entity_type .'/'. $this->contact->client->client_hash .'/'. $this->key;
                 break;
             case 'domain':
                 return $domain.'/client/'.$entity_type.'/'.$this->key;
@@ -118,7 +119,7 @@ trait Inviteable
         if (Ninja::isHosted()) {
             $domain = $this->company->domain();
         } else {
-            $domain = strlen($this->company->portal_domain) > 5 ? $this->company->portal_domain : config('ninja.app_url');
+            $domain = strlen($this->company->portal_domain ?? '') > 5 ? $this->company->portal_domain : config('ninja.app_url');
         }
 
         switch ($this->company->portal_mode) {
@@ -127,7 +128,6 @@ trait Inviteable
                 break;
             case 'iframe':
                 return $domain.'/client/';
-                //return $domain . $entity_type .'/'. $this->contact->client->client_hash .'/'. $this->key;
                 break;
             case 'domain':
                 return $domain.'/client/';

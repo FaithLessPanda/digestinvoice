@@ -12,6 +12,7 @@
 namespace App\Filters;
 
 use App\Models\Payment;
+use Illuminate\Contracts\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -43,7 +44,12 @@ class PaymentFilters extends QueryFilters
                           ->orWhere('custom_value4', 'like', '%'.$filter.'%')
                           ->orWhereHas('client', function ($q) use ($filter) {
                                 $q->where('name', 'like', '%'.$filter.'%');
-                            });
+                            })
+                            ->orWhereHas('client.contacts', function ($q) use ($filter) {
+                              $q->where('first_name', 'like', '%'.$filter.'%')
+                                ->orWhere('last_name', 'like', '%'.$filter.'%')
+                                ->orWhere('email', 'like', '%'.$filter.'%');
+                          });
         });
     }
 
@@ -117,13 +123,16 @@ class PaymentFilters extends QueryFilters
 
     /**
      * Returns a list of payments that can be matched to bank transactions
+     * @param ?string $value
+     * @return Builder
      */
     public function match_transactions($value = 'true'): Builder
     {
+        
         if ($value == 'true') {
             return $this->builder
                         ->where('is_deleted', 0)
-                        ->where(function ($query) {
+                        ->where(function (Builder $query) {
                             $query->whereNull('transaction_id')
                             ->orWhere("transaction_id", "")
                             ->company();
@@ -157,6 +166,13 @@ class PaymentFilters extends QueryFilters
         if (!is_array($sort_col) || count($sort_col) != 2) {
             return $this->builder;
         }
+
+
+        if ($sort_col[0] == 'client_id') {
+            return $this->builder->orderBy(\App\Models\Client::select('name')
+                    ->whereColumn('clients.id', 'payments.client_id'), $sort_col[1]);
+        }
+
 
         return $this->builder->orderBy($sort_col[0], $sort_col[1]);
     }

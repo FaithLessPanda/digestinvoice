@@ -138,7 +138,9 @@ class Email implements ShouldQueue
 
         $this->email_object->company = $this->company;
 
-        $this->email_object->client_id ? $this->email_object->settings  = $this->email_object->client->getMergedSettings() : $this->email_object->settings = $this->company->settings;
+        $this->email_object->client_id ? $this->email_object->settings = $this->email_object->client->getMergedSettings() : $this->email_object->settings = $this->company->settings;
+
+        $this->email_object->client_id ? nlog("client settings") : nlog("company settings ");
 
         $this->email_object->whitelabel = $this->company->account->isPaid() ? true : false;
 
@@ -432,6 +434,7 @@ class Email implements ShouldQueue
                 $this->setGmailMailer();
                 return $this;
             case 'office365':
+            case 'microsoft':
                 $this->mailer = 'office365';
                 $this->setOfficeMailer();
                 return $this;
@@ -445,7 +448,8 @@ class Email implements ShouldQueue
                 return $this;
 
             default:
-                break;
+                $this->mailer = config('mail.default');
+                return $this;
         }
 
         if (Ninja::isSelfHost()) {

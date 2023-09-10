@@ -20,7 +20,7 @@ class Request extends FormRequest
     use MakesHash;
     use RuntimeFormRequest;
 
-    protected $file_validation = 'sometimes|file|mimes:png,ai,jpeg,tiff,pdf,gif,psd,txt,doc,xls,ppt,xlsx,docx,pptx,webp|max:20000';
+    protected $file_validation = 'sometimes|file|mimes:png,ai,jpeg,tiff,pdf,gif,psd,txt,doc,xls,ppt,xlsx,docx,pptx,webp,xml|max:20000';
     /**
      * Get the validation rules that apply to the request.
      *
@@ -199,6 +199,17 @@ class Request extends FormRequest
     {
     }
 
+    /**
+     * Convert to boolean
+     *
+     * @param $bool
+     * @return bool
+     */
+    public function toBoolean($bool): bool
+    {
+        return filter_var($bool, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+    }
+    
     public function checkTimeLog(array $log): bool
     {
         if (count($log) == 0) {

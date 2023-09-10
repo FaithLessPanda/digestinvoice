@@ -165,6 +165,7 @@ class BaseRepository
 
         if (! $model->id) {
             $company_defaults = $client->setCompanyDefaults($data, lcfirst($resource));
+            $data['exchange_rate'] = $company_defaults['exchange_rate'];
             $model->uses_inclusive_taxes = $client->getSetting('inclusive_taxes');
             $data = array_merge($company_defaults, $data);
         }
@@ -223,7 +224,7 @@ class BaseRepository
             /* Get array of Keys which have been removed from the invitations array and soft delete each invitation */
             $model->invitations->pluck('key')->diff($invitations->pluck('key'))->each(function ($invitation) use ($resource) {
                 $invitation_class = sprintf('App\\Models\\%sInvitation', $resource);
-                $invitation = $invitation_class::where('key', $invitation)->first();
+                $invitation = $invitation_class::query()->where('key', $invitation)->first();
 
                 if ($invitation) {
                     $invitation->delete();

@@ -11,11 +11,11 @@
 
 namespace App\Jobs\Cron;
 
-use App\Models\Invoice;
 use App\Libraries\MultiDB;
-use Illuminate\Support\Facades\Auth;
+use App\Models\Invoice;
 use App\Utils\Traits\SubscriptionHooker;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Support\Facades\Auth;
 
 class SubscriptionCron
 {
@@ -36,7 +36,7 @@ class SubscriptionCron
      *
      * @return void
      */
-    public function handle() : void
+    public function handle(): void
     {
         nlog('Subscription Cron');
 
@@ -52,7 +52,7 @@ class SubscriptionCron
                               ->whereNotNull('subscription_id')
                               ->cursor();
 
-            $invoices->each(function ($invoice) {
+            $invoices->each(function (Invoice $invoice) {
                 $subscription = $invoice->subscription;
 
                 $body = [
@@ -80,7 +80,7 @@ class SubscriptionCron
                                   ->whereNotNull('subscription_id')
                                   ->cursor();
 
-                $invoices->each(function ($invoice) {
+                $invoices->each(function (Invoice $invoice) {
                     $subscription = $invoice->subscription;
 
                     $body = [

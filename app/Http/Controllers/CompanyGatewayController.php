@@ -149,7 +149,11 @@ class CompanyGatewayController extends BaseController
      */
     public function create(CreateCompanyGatewayRequest $request)
     {
-        $company_gateway = CompanyGatewayFactory::create(auth()->user()->company()->id, auth()->user()->id);
+
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
+
+        $company_gateway = CompanyGatewayFactory::create($user->company()->id, auth()->user()->id);
 
         return $this->itemResponse($company_gateway);
     }
@@ -194,27 +198,32 @@ class CompanyGatewayController extends BaseController
      */
     public function store(StoreCompanyGatewayRequest $request)
     {
-        $company_gateway = CompanyGatewayFactory::create(auth()->user()->company()->id, auth()->user()->id);
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
+
+        $company_gateway = CompanyGatewayFactory::create($user->company()->id, $user->id);
         $company_gateway->fill($request->all());
         $company_gateway->save();
 
         /*Always ensure at least one fees and limits object is set per gateway*/
-        if (! isset($company_gateway->fees_and_limits)) {
-            $gateway_types = $company_gateway->driver(new Client)->gatewayTypes();
+        $gateway_types = $company_gateway->driver(new Client())->getAvailableMethods();
 
-            $fees_and_limits = new \stdClass;
-            $fees_and_limits->{$gateway_types[0]} = new FeesAndLimits;
+        $fees_and_limits = $company_gateway->fees_and_limits;
 
-            $company_gateway->fees_and_limits = $fees_and_limits;
-            $company_gateway->save();
+        foreach($gateway_types as $key => $gateway_type) {
+            if(!property_exists($fees_and_limits, $key)) {
+                $fees_and_limits->{$key} = new FeesAndLimits();
+            }
         }
+
+        $company_gateway->fees_and_limits = $fees_and_limits;
+        $company_gateway->save();
 
         ApplePayDomain::dispatch($company_gateway, $company_gateway->company->db);
 
         if (in_array($company_gateway->gateway_key, $this->stripe_keys)) {
             StripeWebhook::dispatch($company_gateway->company->company_key, $company_gateway->id);
-        }
-        elseif($company_gateway->gateway_key == $this->checkout_key) {
+        } elseif($company_gateway->gateway_key == $this->checkout_key) {
             CheckoutSetupWebhook::dispatch($company_gateway->company->company_key, $company_gateway->id);
         }
 
@@ -382,16 +391,24 @@ class CompanyGatewayController extends BaseController
     {
         $company_gateway->fill($request->all());
 
-        if (! $request->has('fees_and_limits')) {
-            $company_gateway->fees_and_limits = '';
+        /*Always ensure at least one fees and limits object is set per gateway*/
+        $gateway_types = $company_gateway->driver(new Client())->getAvailableMethods();
+
+        $fees_and_limits = $company_gateway->fees_and_limits;
+
+        foreach($gateway_types as $key => $gateway_type) {
+            if(!property_exists($fees_and_limits, $key)) {
+                $fees_and_limits->{$key} = new FeesAndLimits();
+            }
         }
 
+        $company_gateway->fees_and_limits = $fees_and_limits;
         $company_gateway->save();
 
         if($company_gateway->gateway_key == $this->checkout_key) {
             CheckoutSetupWebhook::dispatch($company_gateway->company->company_key, $company_gateway->fresh()->id);
         }
-        
+
         return $this->itemResponse($company_gateway);
     }
 
@@ -446,7 +463,7 @@ class CompanyGatewayController extends BaseController
      */
     public function destroy(DestroyCompanyGatewayRequest $request, CompanyGateway $company_gateway)
     {
-        $company_gateway->driver(new Client)
+        $company_gateway->driver(new Client())
                          ->disconnect();
 
         $company_gateway->delete();

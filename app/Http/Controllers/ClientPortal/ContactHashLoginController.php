@@ -11,11 +11,10 @@
 
 namespace App\Http\Controllers\ClientPortal;
 
-use Auth;
-use App\Models\RecurringInvoice;
 use App\Http\Controllers\Controller;
-use Illuminate\Support\Facades\Redirect;
 use App\Http\ViewComposers\PortalComposer;
+use App\Models\RecurringInvoice;
+use Illuminate\Support\Facades\Redirect;
 
 class ContactHashLoginController extends Controller
 {
@@ -47,7 +46,7 @@ class ContactHashLoginController extends Controller
     {
         return redirect($this->setRedirectPath());
     }
-    
+
     /**
      * Generic error page for client portal.
      *

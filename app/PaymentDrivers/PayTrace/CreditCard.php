@@ -91,7 +91,7 @@ class CreditCard
 
         $profile = $this->getCustomerProfile($response->customer_id);
 
-        $payment_meta = new \stdClass;
+        $payment_meta = new \stdClass();
         $payment_meta->exp_month = $profile->credit_card->expiration_month;
         $payment_meta->exp_year = $profile->credit_card->expiration_year;
         $payment_meta->brand = 'CC';
@@ -183,7 +183,7 @@ class CreditCard
 
         $response = $this->paytrace->gatewayRequest('/v1/transactions/sale/by_customer', $data);
 
-        if ($response->success) {
+        if ($response->success ?? false) {
             $this->paytrace->logSuccessfulGatewayResponse(['response' => $response, 'data' => $this->paytrace->payment_hash], SystemLog::TYPE_PAYTRACE);
 
             return $this->processSuccessfulPayment($response);

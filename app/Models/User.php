@@ -11,25 +11,25 @@
 
 namespace App\Models;
 
-use App\Models\Company;
-use App\Utils\TruthSource;
 use App\Jobs\Mail\NinjaMailer;
-use Illuminate\Support\Carbon;
-use App\Utils\Traits\MakesHash;
 use App\Jobs\Mail\NinjaMailerJob;
-use App\Services\User\UserService;
-use App\Utils\Traits\UserSettings;
 use App\Jobs\Mail\NinjaMailerObject;
 use App\Mail\Admin\ResetPasswordObject;
-use Illuminate\Database\Eloquent\Model;
 use App\Models\Presenters\UserPresenter;
-use Illuminate\Notifications\Notifiable;
-use Laracasts\Presenter\PresentableTrait;
+use App\Services\User\UserService;
+use App\Utils\Traits\MakesHash;
 use App\Utils\Traits\UserSessionAttributes;
-use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Utils\Traits\UserSettings;
+use App\Utils\TruthSource;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\App;
+use Laracasts\Presenter\PresentableTrait;
 
 /**
  * App\Models\User
@@ -61,6 +61,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
  * @property string|null $last_login
  * @property string|null $signature
  * @property string $password
+ * @property string $language_id
  * @property string|null $remember_token
  * @property string|null $custom_value1
  * @property string|null $custom_value2
@@ -71,7 +72,8 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
  * @property int|null $deleted_at
  * @property string|null $oauth_user_refresh_token
  * @property string|null $last_confirmed_email_address
- * @property int $has_password
+ * @property bool $has_password
+ * @property bool $user_logged_in_notification
  * @property Carbon|null $oauth_user_token_expiry
  * @property string|null $sms_verification_code
  * @property bool $verified_phone_number
@@ -96,6 +98,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
  * @property-read \Illuminate\Notifications\DatabaseNotificationCollection<int, \Illuminate\Notifications\DatabaseNotification> $notifications
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\CompanyToken> $tokens
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Company> $companies
+ * @method static \Illuminate\Database\Eloquent\Builder|BaseModel companies()
  * @method bool hasPermissionTo(string $permission)
  * @method \App\Models\Company getCompany()
  * @method \App\Models\Company company()
@@ -138,6 +141,7 @@ class User extends Authenticatable implements MustVerifyEmail
      *
      */
     protected $fillable = [
+        'user_logged_in_notification',
         'first_name',
         'last_name',
         'email',
@@ -153,6 +157,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'custom_value4',
         'is_deleted',
         'shopify_user_id',
+        'language_id',
         // 'oauth_user_token',
         // 'oauth_user_refresh_token',
     ];
@@ -322,7 +327,7 @@ class User extends Authenticatable implements MustVerifyEmail
      *
      * @return int
      */
-    public function companyId() :int
+    public function companyId(): int
     {
         return $this->company()->id;
     }
@@ -359,24 +364,27 @@ class User extends Authenticatable implements MustVerifyEmail
      *
      * @return bool
      */
-    public function isAdmin() : bool
+    public function isAdmin(): bool
     {
         return $this->token()->cu->is_admin;
 
     }
 
-    public function isOwner() : bool
+    public function isOwner(): bool
     {
         return $this->token()->cu->is_owner;
-
     }
 
+    public function hasOwnerFlag(): bool
+    {
+        return $this->company_users()->where('is_owner', true)->exists();
+    }
     /**
      * Returns true is user is an admin _or_ owner
      *
      * @return boolean
      */
-    public function isSuperUser() :bool
+    public function isSuperUser(): bool
     {
         return $this->token()->cu->is_owner || $this->token()->cu->is_admin;
     }
@@ -397,7 +405,7 @@ class User extends Authenticatable implements MustVerifyEmail
      * @param  mixed $entity
      * @return bool
      */
-    public function owns($entity) : bool
+    public function owns($entity): bool
     {
         return ! empty($entity->user_id) && $entity->user_id == $this->id;
     }
@@ -408,7 +416,7 @@ class User extends Authenticatable implements MustVerifyEmail
      * @param  mixed $entity
      * @return bool
      */
-    public function assigned($entity) : bool
+    public function assigned($entity): bool
     {
         return ! empty($entity->assigned_user_id) && $entity->assigned_user_id == $this->id;
     }
@@ -419,7 +427,7 @@ class User extends Authenticatable implements MustVerifyEmail
      * @param  string $permission
      * @return bool
      */
-    public function hasPermission($permission) : bool
+    public function hasPermission($permission): bool
     {
         /**
          * We use the limit parameter here to ensure we don't split on permissions that have multiple underscores.
@@ -539,7 +547,7 @@ class User extends Authenticatable implements MustVerifyEmail
 
         return false;
     }
-    
+
     /**
      * Used when we need to filter permissions carefully.
      *
@@ -562,7 +570,7 @@ class User extends Authenticatable implements MustVerifyEmail
         if ($this->isSuperUser()) {
             return false;
         }
-        
+
         foreach ($excluded_permissions as $permission) {
             if ($this->hasExactPermission($permission)) {
                 return false;
@@ -633,20 +641,37 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function sendPasswordResetNotification($token)
     {
-        $nmo = new NinjaMailerObject;
-        $nmo->mailable = new NinjaMailer((new ResetPasswordObject($token, $this, $this->account->default_company))->build());
+        $is_react = request()->has('react') || request()->hasHeader('X-React') ? true : false;
+
+        $nmo = new NinjaMailerObject();
+        $nmo->mailable = new NinjaMailer((new ResetPasswordObject($token, $this, $this->account->default_company, $is_react))->build());
         $nmo->to_user = $this;
         $nmo->settings = $this->account->default_company->settings;
         $nmo->company = $this->account->default_company;
 
         NinjaMailerJob::dispatch($nmo, true);
 
-        //$this->notify(new ResetPasswordNotification($token));
     }
 
     public function service()
     {
         return new UserService($this);
+    }
+
+    public function language()
+    {
+        return $this->belongsTo(Language::class);
+    }
+
+    public function getLocale()
+    {
+        $locale = $this->language->locale ?? null;
+
+        if($locale) {
+            App::setLocale($locale);
+        }
+
+        return $locale;
     }
 
     public function translate_entity()

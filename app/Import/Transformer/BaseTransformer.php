@@ -11,27 +11,27 @@
 
 namespace App\Import\Transformer;
 
-use App\Models\Quote;
-use App\Utils\Number;
+use App\Factory\ClientFactory;
+use App\Factory\ExpenseCategoryFactory;
+use App\Factory\ProjectFactory;
+use App\Factory\VendorFactory;
 use App\Models\Client;
-use App\Models\Vendor;
+use App\Models\ClientContact;
 use App\Models\Country;
 use App\Models\Expense;
+use App\Models\ExpenseCategory;
 use App\Models\Invoice;
+use App\Models\PaymentType;
 use App\Models\Product;
 use App\Models\Project;
-use App\Models\TaxRate;
-use App\Models\PaymentType;
-use App\Models\ClientContact;
-use App\Factory\ClientFactory;
-use App\Factory\VendorFactory;
-use Illuminate\Support\Carbon;
-use App\Factory\ProjectFactory;
-use App\Models\ExpenseCategory;
+use App\Models\Quote;
 use App\Models\RecurringInvoice;
-use Illuminate\Support\Facades\Cache;
+use App\Models\TaxRate;
+use App\Models\Vendor;
 use App\Repositories\ClientRepository;
-use App\Factory\ExpenseCategoryFactory;
+use App\Utils\Number;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Class BaseTransformer.
@@ -47,6 +47,10 @@ class BaseTransformer
 
     public function parseDate($date)
     {
+        if(stripos($date, "/") !== false && $this->company->settings->country_id != 840) {
+            $date = str_replace('/', '-', $date);
+        }
+
         try {
             $parsed_date = Carbon::parse($date);
 
@@ -147,7 +151,7 @@ class BaseTransformer
 
     public function getRemainingCycles($remaining_cycles = -1): int
     {
-        
+
         if ($remaining_cycles == 'endless') {
             return -1;
         }
@@ -175,6 +179,7 @@ class BaseTransformer
 
     public function getClient($client_name, $client_email)
     {
+
         if (! empty($client_name)) {
             $client_id_search = Client::query()->where('company_id', $this->company->id)
                 ->where('is_deleted', false)
@@ -226,7 +231,7 @@ class BaseTransformer
         );
 
         $client_repository = null;
-        
+
         return $client->id;
     }
 
@@ -238,9 +243,10 @@ class BaseTransformer
      */
     public function hasClient($name)
     {
+
         return Client::query()->where('company_id', $this->company->id)
             ->where('is_deleted', false)
-            ->whereRaw("LOWER(REPLACE(`name`, ' ' ,''))  = ?", [
+            ->whereRaw("LOWER(REPLACE(`name`, ' ' , '')) = ?", [
                 strtolower(str_replace(' ', '', $name)),
             ])
             ->exists();
@@ -309,14 +315,11 @@ class BaseTransformer
     public function getFloat($data, $field)
     {
         if (array_key_exists($field, $data)) {
-            //$number = preg_replace('/[^0-9-.]+/', '', $data[$field]);
-            return Number::parseStringFloat($data[$field]);
-        } else {
-            //$number = 0;
-            return 0;
-        }
-
-        // return Number::parseFloat($number);
+            return Number::parseFloat($data[$field]);
+        } 
+        
+        return 0;
+        
     }
 
     /**
@@ -327,10 +330,11 @@ class BaseTransformer
      */
     public function getFloatOrOne($data, $field)
     {
-        if (array_key_exists($field, $data)) 
-            return Number::parseStringFloat($data[$field]) > 0 ? Number::parseStringFloat($data[$field]) : 1;
- 
-        return 1;    
+        if (array_key_exists($field, $data)) {
+            return Number::parseFloat($data[$field]) > 0 ? Number::parseFloat($data[$field]) : 1;
+        }
+
+        return 1;
 
     }
 
@@ -625,7 +629,7 @@ class BaseTransformer
     public function getExpenseCategoryId($name)
     {
         /** @var \App\Models\ExpenseCategory $ec */
-        
+
         $ec = ExpenseCategory::query()->where('company_id', $this->company->id)
             ->where('is_deleted', false)
             ->whereRaw("LOWER(REPLACE(`name`, ' ' ,''))  = ?", [
@@ -633,13 +637,14 @@ class BaseTransformer
             ])
             ->first();
 
-        if($ec)
+        if($ec) {
             return $ec->id;
+        }
 
         $ec = \App\Factory\ExpenseCategoryFactory::create($this->company->id, $this->company->owner()->id);
         $ec->name = $name;
         $ec->save();
-        
+
         return $ec ? $ec->id : null;
     }
 
@@ -669,6 +674,10 @@ class BaseTransformer
      */
     public function getProjectId($name, $clientId = null)
     {
+        if(strlen($name) == 0) {
+            return null;
+        }
+
         $project = Project::query()->where('company_id', $this->company->id)
             ->where('is_deleted', false)
             ->whereRaw("LOWER(REPLACE(`name`, ' ' ,''))  = ?", [

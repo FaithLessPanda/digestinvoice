@@ -37,6 +37,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property-read \App\Models\GatewayType|null $gateway_type
  * @property-read mixed $hashed_id
  * @property-read \App\Models\User $user
+ * @method static \Illuminate\Database\Eloquent\Builder|BaseModel company()
  * @mixin \Eloquent
  */
 class ClientGatewayToken extends BaseModel
@@ -84,7 +85,12 @@ class ClientGatewayToken extends BaseModel
         return $this->hasOne(GatewayType::class, 'id', 'gateway_type_id');
     }
 
-    public function company(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    /**
+     * Company
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
+    public function company()
     {
         return $this->belongsTo(Company::class);
     }

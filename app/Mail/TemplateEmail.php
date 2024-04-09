@@ -18,6 +18,7 @@ use App\Services\PdfMaker\Designs\Utilities\DesignHelpers;
 use App\Utils\HtmlEngine;
 use App\Utils\Ninja;
 use Illuminate\Mail\Mailable;
+use Illuminate\Support\Facades\URL;
 
 class TemplateEmail extends Mailable
 {
@@ -74,7 +75,7 @@ class TemplateEmail extends Mailable
         $template_name = 'email.template.'.$this->build_email->getTemplate();
 
         if ($this->build_email->getTemplate() == 'light' || $this->build_email->getTemplate() == 'dark') {
-            $template_name = 'email.template.client';
+            $template_name = $this->company->account->isPremium() ? 'email.template.client_premium' : 'email.template.client';
         }
 
         if ($this->build_email->getTemplate() == 'custom') {
@@ -108,12 +109,15 @@ class TemplateEmail extends Mailable
 
         if (strlen($settings->bcc_email) > 1) {
             if (Ninja::isHosted()) {
-                $bccs = explode(',', str_replace(' ', '', $settings->bcc_email));
-                $this->bcc(array_slice($bccs, 0, 2));
-                //$this->bcc(reset($bccs)); //remove whitespace if any has been inserted.
+
+                if($company->account->isPaid()) {
+                    $bccs = explode(',', str_replace(' ', '', $settings->bcc_email));
+                    $this->bcc(array_slice($bccs, 0, 5));
+                }
+
             } else {
                 $this->bcc(explode(',', str_replace(' ', '', $settings->bcc_email)));
-            }//remove whitespace if any has been inserted.
+            }
         }
 
         $this->subject(str_replace("<br>", "", $this->build_email->getSubject()))
@@ -135,6 +139,7 @@ class TemplateEmail extends Mailable
                 'whitelabel' => $this->client->user->account->isPaid() ? true : false,
                 'logo' => $this->company->present()->logo($settings),
                 'links' => $this->build_email->getAttachmentLinks(),
+                'email_preferences' => (Ninja::isHosted() && in_array($settings->email_sending_method, ['default', 'mailgun'])) ? $this->company->domain() . URL::signedRoute('client.email_preferences', ['entity' => $this->invitation->getEntityString(), 'invitation_key' => $this->invitation->key], absolute: false) : false,
             ]);
 
         foreach ($this->build_email->getAttachments() as $file) {
@@ -148,22 +153,18 @@ class TemplateEmail extends Mailable
         if ($this->invitation && $this->invitation->invoice && $settings->ubl_email_attachment && $this->company->account->hasFeature(Account::FEATURE_PDF_ATTACHMENT)) {
             $ubl_string = (new CreateUbl($this->invitation->invoice))->handle();
 
-            nlog("template {$ubl_string}");
-
             if ($ubl_string) {
                 $this->attachData($ubl_string, $this->invitation->invoice->getFileName('xml'));
             }
-            
+
         }
         if ($this->invitation && $this->invitation->invoice && $this->invitation->invoice->client->getSetting('enable_e_invoice') && $this->company->account->hasFeature(Account::FEATURE_PDF_ATTACHMENT)) {
             $xml_string = $this->invitation->invoice->service()->getEInvoice($this->invitation->contact);
 
-            nlog("template {$xml_string}");
-
             if($xml_string) {
                 $this->attachData($xml_string, $this->invitation->invoice->getEFileName("xml"));
             }
-        
+
         }
 
         return $this;

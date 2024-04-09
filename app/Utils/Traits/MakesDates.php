@@ -11,11 +11,11 @@
 
 namespace App\Utils\Traits;
 
+use App\DataMapper\Schedule\EmailStatement;
+use App\Models\Company;
+use Carbon\Carbon;
 use DateTime;
 use DateTimeZone;
-use Carbon\Carbon;
-use App\Models\Company;
-use App\DataMapper\Schedule\EmailStatement;
 
 /**
  * Class MakesDates.
@@ -57,7 +57,7 @@ trait MakesDates
      * @param  string $format The date display format
      * @return string         The formatted date
      */
-    public function formatDate($date, string $format) :string
+    public function formatDate($date, string $format): string
     {
         if (! isset($date)) {
             return '';
@@ -76,7 +76,7 @@ trait MakesDates
      * @param  string $format The date display format
      * @return string         The formatted date
      */
-    public function formatDatetime($date, string $format) :string
+    public function formatDatetime($date, string $format): string
     {
         return Carbon::createFromTimestamp($date)->format($format.' g:i a');
     }
@@ -87,7 +87,7 @@ trait MakesDates
      * @param  string $format The date display format
      * @return string         The formatted date
      */
-    public function formatDateTimestamp($timestamp, string $format) :string
+    public function formatDateTimestamp($timestamp, string $format): string
     {
         return Carbon::createFromTimestamp($timestamp)->format($format);
     }
@@ -127,9 +127,10 @@ trait MakesDates
             $first_month_of_year = $company ? $company?->first_month_of_year : 1;
             $fin_year_start = now()->createFromDate(now()->year, $first_month_of_year, 1);
 
-            if(now()->lt($fin_year_start)) 
+            if(now()->lt($fin_year_start)) {
                 $fin_year_start->subYearNoOverflow();
-            
+            }
+
         }
 
         //override for financial years
@@ -142,7 +143,7 @@ trait MakesDates
             if(now()->subYear()->lt($fin_year_start)) {
                 $fin_year_start->subYearNoOverflow();
             }
-                    
+
         }
 
 

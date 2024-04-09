@@ -19,7 +19,7 @@ use Illuminate\Support\Str;
 
 class RecurringExpenseToExpenseFactory
 {
-    public static function create(RecurringExpense $recurring_expense) :Expense
+    public static function create(RecurringExpense $recurring_expense): Expense
     {
         $expense = new Expense();
         $expense->user_id = $recurring_expense->user_id;
@@ -65,6 +65,7 @@ class RecurringExpenseToExpenseFactory
         $expense->tax_amount3 = $recurring_expense->tax_amount3 ?: 0;
         $expense->uses_inclusive_taxes = $recurring_expense->uses_inclusive_taxes;
         $expense->calculate_tax_by_amount = $recurring_expense->calculate_tax_by_amount;
+        $expense->invoice_currency_id = $recurring_expense->invoice_currency_id;
 
         return $expense;
     }
@@ -244,13 +245,13 @@ class RecurringExpenseToExpenseFactory
 
                 if ($matches->keys()->first() == ':MONTHYEAR') {
 
-                    $final_date = now()->addMonths($output-now()->month);
+                    $final_date = now()->addMonths($output - now()->month);
 
                     $output =    \sprintf(
-                            '%s %s',
-                            $final_date->translatedFormat('F'),
-                            $final_date->year,
-                        );
+                        '%s %s',
+                        $final_date->translatedFormat('F'),
+                        $final_date->year,
+                    );
                 }
 
                 $value = preg_replace(

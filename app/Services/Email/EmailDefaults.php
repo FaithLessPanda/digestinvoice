@@ -11,23 +11,18 @@
 
 namespace App\Services\Email;
 
-use App\Models\Task;
-use App\Utils\Ninja;
-use App\Models\Quote;
-use App\Models\Credit;
+use App\DataMapper\EmailTemplateDefaults;
+use App\Jobs\Entity\CreateRawPdf;
+use App\Jobs\Invoice\CreateUbl;
 use App\Models\Account;
 use App\Models\Expense;
 use App\Models\Invoice;
-use App\Models\PurchaseOrder;
-use App\Jobs\Invoice\CreateUbl;
+use App\Models\Task;
+use App\Utils\Ninja;
 use App\Utils\Traits\MakesHash;
-use App\Jobs\Entity\CreateRawPdf;
-use Illuminate\Support\Facades\App;
 use Illuminate\Mail\Mailables\Address;
-use Illuminate\Support\Facades\Storage;
-use App\DataMapper\EmailTemplateDefaults;
+use Illuminate\Support\Facades\App;
 use League\CommonMark\CommonMarkConverter;
-use App\Jobs\Vendor\CreatePurchaseOrderPdf;
 
 class EmailDefaults
 {
@@ -112,10 +107,10 @@ class EmailDefaults
 
         match ($this->email->email_object->settings->email_style) {
             'plain' => $this->template = 'email.template.plain',
-            'light' => $this->template = 'email.template.client',
-            'dark' => $this->template = 'email.template.client',
+            'light' => $this->template = $this->email->email_object->company->account->isPremium() ? 'email.template.client_premium' : 'email.template.client',
+            'dark' => $this->template = $this->email->email_object->company->account->isPremium() ? 'email.template.client_premium' :'email.template.client',
             'custom' => $this->template = 'email.template.custom',
-            default => $this->template = 'email.template.client',
+            default => $this->template = $this->email->email_object->company->account->isPremium() ? 'email.template.client_premium' :'email.template.client',
         };
 
         $this->email->email_object->html_template = $this->template;
@@ -171,7 +166,6 @@ class EmailDefaults
 
         if (strlen($this->email->email_object->body) > 3) {
             // A Custom Message has been set in the email screen.
-            // return $this;
         } elseif (strlen($this->email->email_object->settings?->{$this->email->email_object->email_template_body}) > 3) {
             // A body has been saved in the settings.
             $this->email->email_object->body = $this->email->email_object->settings?->{$this->email->email_object->email_template_body};
@@ -183,8 +177,8 @@ class EmailDefaults
         $breaks = ["<br />","<br>","<br/>"];
         $this->email->email_object->text_body = str_ireplace($breaks, "\r\n", $this->email->email_object->body);
         $this->email->email_object->text_body = strip_tags($this->email->email_object->text_body);
-        $this->email->email_object->text_body = str_replace('$view_button', '$view_url', $this->email->email_object->text_body);
-        
+        $this->email->email_object->text_body = str_replace(['$view_button','$viewButton'], '$view_url', $this->email->email_object->text_body);
+
         if ($this->template == 'email.template.custom') {
             $this->email->email_object->body = (str_replace('$body', $this->email->email_object->body, str_replace(["\r","\n"], "", $this->email->email_object->settings->email_style_custom)));
         }
@@ -214,9 +208,20 @@ class EmailDefaults
      */
     private function setReplyTo(): self
     {
-        $reply_to_email = str_contains($this->email->email_object->settings->reply_to_email, "@") ? $this->email->email_object->settings->reply_to_email : $this->email->company->owner()->email;
+        $reply_to_email = $this->email->company->owner()->email;
+        $reply_to_name = $this->email->company->owner()->present()->name();
 
-        $reply_to_name = strlen($this->email->email_object->settings->reply_to_name) > 3 ? $this->email->email_object->settings->reply_to_name : $this->email->company->owner()->present()->name();
+        if(str_contains($this->email->email_object->settings->reply_to_email, "@")) {
+            $reply_to_email = $this->email->email_object->settings->reply_to_email;
+        } elseif(isset($this->email->email_object->invitation->user)) {
+            $reply_to_email = $this->email->email_object->invitation->user->email;
+        }
+
+        if(strlen($this->email->email_object->settings->reply_to_name) > 3) {
+            $reply_to_name = $this->email->email_object->settings->reply_to_name;
+        } elseif(isset($this->email->email_object->invitation->user)) {
+            $reply_to_name = $this->email->email_object->invitation->user->present()->name();
+        }
 
         $this->email->email_object->reply_to = array_merge($this->email->email_object->reply_to, [new Address($reply_to_email, $reply_to_name)]);
 
@@ -231,7 +236,7 @@ class EmailDefaults
     {
 
         $this->email->email_object->body = strtr($this->email->email_object->body, $this->email->email_object->variables);
-        
+
         $this->email->email_object->text_body = strtr($this->email->email_object->text_body, $this->email->email_object->variables);
 
         $this->email->email_object->subject = strtr($this->email->email_object->subject, $this->email->email_object->variables);
@@ -255,8 +260,8 @@ class EmailDefaults
 
         if (strlen($this->email->email_object->settings->bcc_email) > 1) {
             if (Ninja::isHosted() && $this->email->company->account->isPaid()) {
-                $bccs = array_slice(explode(',', str_replace(' ', '', $this->email->email_object->settings->bcc_email)), 0, 2);
-            } elseif (Ninja::isSelfHost()) {
+                $bccs = array_slice(explode(',', str_replace(' ', '', $this->email->email_object->settings->bcc_email)), 0, 5);
+            } else {
                 $bccs = (explode(',', str_replace(' ', '', $this->email->email_object->settings->bcc_email)));
             }
         }
@@ -278,7 +283,6 @@ class EmailDefaults
         return $this;
         // return $this->email->email_object->cc;
         // return [
-
         // ];
     }
 
@@ -295,20 +299,13 @@ class EmailDefaults
         $documents = [];
 
         /* Return early if the user cannot attach documents */
-        if (!$this->email->company->account->hasFeature(Account::FEATURE_PDF_ATTACHMENT)) {
+        if (!$this->email->company->account->hasFeature(Account::FEATURE_PDF_ATTACHMENT) || $this->email->email_object->email_template_subject == 'email_subject_statement') {
             return $this;
         }
 
         /** Purchase Order / Invoice / Credit / Quote PDF  */
-        if ($this->email->email_object->settings->pdf_email_attachment && $this->email->email_object->entity instanceof PurchaseOrder) {
-            $pdf = (new CreatePurchaseOrderPdf($this->email->email_object->invitation))->rawPdf();
-
-            $this->email->email_object->attachments = array_merge($this->email->email_object->attachments, [['file' => base64_encode($pdf), 'name' => $this->email->email_object->entity->numberFormatter().'.pdf']]);
-        } elseif ($this->email->email_object->settings->pdf_email_attachment &&
-        ($this->email->email_object->entity instanceof Invoice ||
-         $this->email->email_object->entity instanceof Quote ||
-         $this->email->email_object->entity instanceof Credit)) {
-            $pdf = ((new CreateRawPdf($this->email->email_object->invitation, $this->email->company->db))->handle());
+        if ($this->email->email_object->settings->pdf_email_attachment) {
+            $pdf = ((new CreateRawPdf($this->email->email_object->invitation))->handle());
             $this->email->email_object->attachments = array_merge($this->email->email_object->attachments, [['file' => base64_encode($pdf), 'name' => $this->email->email_object->entity->numberFormatter().'.pdf']]);
         }
 
@@ -324,8 +321,9 @@ class EmailDefaults
         if ($this->email->email_object->settings->enable_e_invoice && $this->email->email_object->entity instanceof Invoice) {
             $xml_string = $this->email->email_object->entity->service()->getEInvoice();
 
-            if($xml_string)
+            if($xml_string) {
                 $this->email->email_object->attachments = array_merge($this->email->email_object->attachments, [['file' => base64_encode($xml_string), 'name' => explode(".", $this->email->email_object->entity->getFileName('xml'))[0]."-e_invoice.xml"]]);
+            }
         }
 
         if (!$this->email->email_object->settings->document_email_attachment || !$this->email->company->account->hasFeature(Account::FEATURE_DOCUMENTS)) {
@@ -333,16 +331,16 @@ class EmailDefaults
         }
 
         /* Company Documents */
-        $this->email->email_object->documents = array_merge($this->email->email_object->documents, $this->email->company->documents->pluck('id')->toArray());
+        $this->email->email_object->documents = array_merge($this->email->email_object->documents, $this->email->company->documents()->where('is_public', true)->pluck('id')->toArray());
 
         /** Entity Documents */
         if ($this->email->email_object->entity?->documents) {
-            $this->email->email_object->documents = array_merge($this->email->email_object->documents, $this->email->email_object->entity->documents->pluck('id')->toArray());
+            $this->email->email_object->documents = array_merge($this->email->email_object->documents, $this->email->email_object->entity->documents()->where('is_public', true)->pluck('id')->toArray());
         }
 
         /** Recurring Invoice Documents */
         if ($this->email->email_object->entity instanceof Invoice && $this->email->email_object->entity->recurring_id != null) {
-            $this->email->email_object->documents = array_merge($this->email->email_object->documents, $this->email->email_object->entity->recurring_invoice->documents->pluck('id')->toArray());
+            $this->email->email_object->documents = array_merge($this->email->email_object->documents, $this->email->email_object->entity->recurring_invoice->documents()->where('is_public', true)->pluck('id')->toArray());
         }
 
         /** Task / Expense Documents */
@@ -365,7 +363,7 @@ class EmailDefaults
                         ->where('invoice_documents', 1)
                         ->cursor()
                         ->each(function ($expense) {
-                            $this->email->email_object->documents = array_merge($this->email->email_object->documents, $expense->documents->pluck('id')->toArray());
+                            $this->email->email_object->documents = array_merge($this->email->email_object->documents, $expense->documents()->where('is_public', true)->pluck('id')->toArray());
                         });
             }
 
@@ -373,7 +371,7 @@ class EmailDefaults
                 Task::query()->whereIn('id', $this->transformKeys($task_ids))
                     ->cursor()
                     ->each(function ($task) {
-                        $this->email->email_object->documents = array_merge($this->email->email_object->documents, $task->documents->pluck('id')->toArray());
+                        $this->email->email_object->documents = array_merge($this->email->email_object->documents, $task->documents()->where('is_public', true)->pluck('id')->toArray());
                     });
             }
         }

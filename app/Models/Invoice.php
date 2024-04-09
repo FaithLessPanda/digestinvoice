@@ -11,27 +11,22 @@
 
 namespace App\Models;
 
-use App\Utils\Ninja;
-use Illuminate\Support\Carbon;
-use App\Utils\Traits\MakesDates;
-use App\Jobs\Entity\CreateRawPdf;
+use App\Events\Invoice\InvoiceReminderWasEmailed;
+use App\Events\Invoice\InvoiceWasEmailed;
 use App\Helpers\Invoice\InvoiceSum;
-use App\Jobs\Entity\CreateEntityPdf;
+use App\Helpers\Invoice\InvoiceSumInclusive;
+use App\Models\Presenters\EntityPresenter;
+use App\Services\Invoice\InvoiceService;
+use App\Services\Ledger\LedgerService;
+use App\Utils\Ninja;
+use App\Utils\Traits\Invoice\ActionsInvoice;
+use App\Utils\Traits\MakesDates;
+use App\Utils\Traits\MakesInvoiceValues;
 use App\Utils\Traits\MakesReminders;
 use App\Utils\Traits\NumberFormatter;
-use App\Services\Ledger\LedgerService;
-use Illuminate\Support\Facades\Storage;
-use App\Services\Invoice\InvoiceService;
-use App\Utils\Traits\MakesInvoiceValues;
-use App\Events\Invoice\InvoiceWasEmailed;
-use Laracasts\Presenter\PresentableTrait;
-use App\Models\Presenters\EntityPresenter;
-use App\Models\Presenters\InvoicePresenter;
-use App\Helpers\Invoice\InvoiceSumInclusive;
-use App\Utils\Traits\Invoice\ActionsInvoice;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use App\Events\Invoice\InvoiceReminderWasEmailed;
-use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Support\Carbon;
+use Laracasts\Presenter\PresentableTrait;
 
 /**
  * App\Models\Invoice
@@ -54,7 +49,7 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
  * @property string|null $last_sent_date
  * @property string|null $due_date
  * @property bool $is_deleted
- * @property object|array $line_items
+ * @property object|array|string $line_items
  * @property object|null $backup
  * @property string|null $footer
  * @property string|null $public_notes
@@ -85,7 +80,7 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
  * @property float $amount
  * @property float $balance
  * @property float|null $partial
- * @property string|null $partial_due_date
+ * @property string|null|\Carbon\Carbon $partial_due_date
  * @property string|null $last_viewed
  * @property int|null $created_at
  * @property int|null $updated_at
@@ -103,7 +98,7 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
  * @property \App\Models\User|null $assigned_user
  * @property \App\Models\Client $client
  * @property \App\Models\InvoiceInvitation $invitation
- * @property \App\Models\Company $company
+ * @property-read \App\Models\Company $company
  * @property-read int|null $company_ledger_count
  * @property-read int|null $credits_count
  * @property \App\Models\Design|null $design
@@ -134,6 +129,7 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\InvoiceInvitation> $invitations
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Payment> $payments
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Task> $tasks
+ * @method static \Illuminate\Database\Eloquent\Builder|BaseModel company()
  * @property object|null $tax_data
  * @mixin \Eloquent
  */
@@ -208,6 +204,7 @@ class Invoice extends BaseModel
         'is_deleted' => 'bool',
         'is_amount_discount' => 'bool',
         'tax_data' => 'object',
+        'partial_due_date' => 'date:Y-m-d'
     ];
 
     protected $with = [];
@@ -217,21 +214,21 @@ class Invoice extends BaseModel
         'status',
     ];
 
-    const STATUS_DRAFT = 1;
+    public const STATUS_DRAFT = 1;
 
-    const STATUS_SENT = 2;
+    public const STATUS_SENT = 2;
 
-    const STATUS_PARTIAL = 3;
+    public const STATUS_PARTIAL = 3;
 
-    const STATUS_PAID = 4;
+    public const STATUS_PAID = 4;
 
-    const STATUS_CANCELLED = 5;
+    public const STATUS_CANCELLED = 5;
 
-    const STATUS_REVERSED = 6;
+    public const STATUS_REVERSED = 6;
 
-    const STATUS_OVERDUE = -1; //status < 4 || < 3 && !is_deleted && !trashed() && due_date < now()
+    public const STATUS_OVERDUE = -1; //status < 4 || < 3 && !is_deleted && !trashed() && due_date < now()
 
-    const STATUS_UNPAID = -2; //status < 4 || < 3 && !is_deleted && !trashed()
+    public const STATUS_UNPAID = -2; //status < 4 || < 3 && !is_deleted && !trashed()
 
     public function getEntityType()
     {
@@ -245,15 +242,18 @@ class Invoice extends BaseModel
 
     public function getDueDateAttribute($value)
     {
-        return $this->dateMutator($value);
+        return $value ? $this->dateMutator($value) : null;
     }
 
-    public function getPartialDueDateAttribute($value)
-    {
-        return $this->dateMutator($value);
-    }
+    // public function getPartialDueDateAttribute($value)
+    // {
+    //     return $value ? $this->dateMutator($value) : null;
+    // }
 
-    public function company(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo<Company>
+     */
+    public function company()
     {
         return $this->belongsTo(Company::class);
     }
@@ -316,7 +316,15 @@ class Invoice extends BaseModel
      */
     public function payments(): \Illuminate\Database\Eloquent\Relations\MorphToMany
     {
-        return $this->morphToMany(Payment::class, 'paymentable')->withTrashed()->withPivot('amount', 'refunded')->withTimestamps();
+        return $this->morphToMany(Payment::class, 'paymentable')->withTrashed()->withPivot('amount', 'refunded', 'deleted_at')->withTimestamps();
+    }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\MorphToMany<Payment>
+     */
+    public function net_payments(): \Illuminate\Database\Eloquent\Relations\MorphToMany
+    {
+        return $this->morphToMany(Payment::class, 'paymentable')->withTrashed()->where('is_deleted', 0)->withPivot('amount', 'refunded', 'deleted_at')->withTimestamps();
     }
 
     /**
@@ -370,13 +378,13 @@ class Invoice extends BaseModel
     {
         return $this->hasOne(Expense::class);
     }
- 
+
     /**
      * Service entry points.
      *
      * @return InvoiceService
      */
-    public function service() :InvoiceService
+    public function service(): InvoiceService
     {
         return new InvoiceService($this);
     }
@@ -393,7 +401,7 @@ class Invoice extends BaseModel
     public function getStatusAttribute()
     {
         $due_date = $this->due_date ? Carbon::parse($this->due_date) : false;
-        $partial_due_date = $this->partial_due_Date ? Carbon::parse($this->partial_due_date) : false;
+        $partial_due_date = $this->partial_due_date ? Carbon::parse($this->partial_due_date) : false;
 
         if ($this->status_id == self::STATUS_SENT && $due_date && $due_date->gt(now())) {
             return self::STATUS_UNPAID;
@@ -475,7 +483,7 @@ class Invoice extends BaseModel
                 return '<h5><span class="badge badge-info">'.ctrans('texts.reversed').'</span></h5>';
             default:
                 return '<h5><span class="badge badge-primary">'.ctrans('texts.sent').'</span></h5>';
-                
+
         }
     }
 
@@ -521,66 +529,6 @@ class Invoice extends BaseModel
         return $invoice_calc->build();
     }
 
-    public function pdf_file_path($invitation = null, string $type = 'path', bool $portal = false)
-    {
-
-        if (! $invitation) {
-            if ($this->invitations()->exists()) {
-                $invitation = $this->invitations()->first();
-            } else {
-                $this->service()->createInvitations();
-                $invitation = $this->invitations()->first();
-            }
-        }
-
-        if (! $invitation) {
-            throw new \Exception('Hard fail, could not create an invitation - is there a valid contact?');
-        }
-
-        $file_path = $this->client->invoice_filepath($invitation).$this->numberFormatter().'.pdf';
-
-        $file_exists = false;
-
-        /* Flysystem throws an exception if the path is "corrupted" so lets wrap it in a try catch and return a bool  06/01/2022*/
-        try {
-            $file_exists = Storage::disk(config('filesystems.default'))->exists($file_path);
-        } catch (\Exception $e) {
-            nlog($e->getMessage());
-        }
-
-        if (Ninja::isHosted() && $portal && $file_exists) {
-            return Storage::disk(config('filesystems.default'))->{$type}($file_path);
-        } elseif (Ninja::isHosted()) {
-            $file_path = (new CreateEntityPdf($invitation, config('filesystems.default')))->handle();
-
-            return Storage::disk(config('filesystems.default'))->{$type}($file_path);
-        }
-
-        try {
-            $file_exists = Storage::disk(config('filesystems.default'))->exists($file_path);
-        } catch (\Exception $e) {
-            nlog($e->getMessage());
-        }
-
-        if ($file_exists) {
-            return Storage::disk(config('filesystems.default'))->{$type}($file_path);
-        }
-
-        try {
-            $file_exists = Storage::disk('public')->exists($file_path);
-        } catch (\Exception $e) {
-            nlog($e->getMessage());
-        }
-
-        if ($file_exists) {
-            return Storage::disk('public')->{$type}($file_path);
-        }
-
-        $file_path = (new CreateEntityPdf($invitation))->handle();
-
-        return Storage::disk('public')->{$type}($file_path);
-    }
-
     public function markInvitationsSent()
     {
         $this->invitations->each(function ($invitation) {
@@ -598,7 +546,7 @@ class Invoice extends BaseModel
      * based on the current status of the invoice.
      * @return bool [description]
      */
-    public function isLocked() :bool
+    public function isLocked(): bool
     {
         $locked_status = $this->client->getSetting('lock_invoices');
 
@@ -689,7 +637,7 @@ class Invoice extends BaseModel
     public function expense_documents()
     {
         $line_items = $this->line_items;
-            
+
         $expense_ids = [];
 
         foreach ($line_items as $item) {
@@ -697,7 +645,7 @@ class Invoice extends BaseModel
                 $expense_ids[] = $item->expense_id;
             }
         }
-            
+
         return Expense::query()->whereIn('id', $this->transformKeys($expense_ids))
                            ->where('invoice_documents', 1)
                            ->where('company_id', $this->company_id)
@@ -707,7 +655,7 @@ class Invoice extends BaseModel
     public function task_documents()
     {
         $line_items = $this->line_items;
-            
+
         $task_ids = [];
 
         foreach ($line_items as $item) {
@@ -715,7 +663,7 @@ class Invoice extends BaseModel
                 $task_ids[] = $item->task_id;
             }
         }
-            
+
         return Task::query()->whereIn('id', $this->transformKeys($task_ids))
                            ->whereHas('company', function ($query) {
                                $query->where('invoice_task_documents', 1);
@@ -733,7 +681,7 @@ class Invoice extends BaseModel
     {
         $tax_type  = '';
 
-        match(intval($id)){
+        match(intval($id)) {
             Product::PRODUCT_TYPE_PHYSICAL => $tax_type = ctrans('texts.physical_goods'),
             Product::PRODUCT_TYPE_SERVICE => $tax_type = ctrans('texts.services'),
             Product::PRODUCT_TYPE_DIGITAL => $tax_type = ctrans('texts.digital_products'),
@@ -784,35 +732,39 @@ class Invoice extends BaseModel
         $schedule_2 = ctrans("texts.{$settings->schedule_reminder2}"); //after due date etc or disabled
         $label_2 = ctrans('texts.reminder2');
 
-        $sends_email_3 = $settings->enable_reminder2 ? $send_email_enabled : $send_email_disabled;      
+        $sends_email_3 = $settings->enable_reminder2 ? $send_email_enabled : $send_email_disabled;
         $days_3 = $settings->num_days_reminder3 . " " . ctrans('texts.days');
         $schedule_3 = ctrans("texts.{$settings->schedule_reminder3}"); //after due date etc or disabled
         $label_3 = ctrans('texts.reminder3');
 
-        $sends_email_endless = $settings->enable_reminder_endless  ? $send_email_enabled : $send_email_disabled;
+        $sends_email_endless = $settings->enable_reminder_endless ? $send_email_enabled : $send_email_disabled;
         $days_endless = \App\Models\RecurringInvoice::frequencyForKey($settings->endless_reminder_frequency_id);
         $label_endless = ctrans('texts.reminder_endless');
 
-        if($schedule_1 == ctrans('texts.disabled') || $settings->schedule_reminder1 == 'disabled' || $settings->schedule_reminder1 == '')
+        if($schedule_1 == ctrans('texts.disabled') || $settings->schedule_reminder1 == 'disabled' || $settings->schedule_reminder1 == '') {
             $reminder_schedule .= "{$label_1}: " . ctrans('texts.disabled') ."<br>";
-        else 
+        } else {
             $reminder_schedule .= "{$label_1}: {$days_1} {$schedule_1} [{$sends_email_1}]<br>";
+        }
 
-        if($schedule_2 == ctrans('texts.disabled') || $settings->schedule_reminder2 == 'disabled' || $settings->schedule_reminder2 == '') 
+        if($schedule_2 == ctrans('texts.disabled') || $settings->schedule_reminder2 == 'disabled' || $settings->schedule_reminder2 == '') {
             $reminder_schedule .= "{$label_2}: " . ctrans('texts.disabled') ."<br>";
-        else 
+        } else {
             $reminder_schedule .= "{$label_2}: {$days_2} {$schedule_2} [{$sends_email_2}]<br>";
-        
-        if($schedule_3 == ctrans('texts.disabled') || $settings->schedule_reminder3 == 'disabled' || $settings->schedule_reminder3 == '') 
+        }
+
+        if($schedule_3 == ctrans('texts.disabled') || $settings->schedule_reminder3 == 'disabled' || $settings->schedule_reminder3 == '') {
             $reminder_schedule .= "{$label_3}: " . ctrans('texts.disabled') ."<br>";
-        else 
+        } else {
             $reminder_schedule .= "{$label_3}: {$days_3} {$schedule_3} [{$sends_email_3}]<br>";
-        
-        if($sends_email_endless == ctrans('texts.disabled') || $settings->endless_reminder_frequency_id == '0' || $settings->endless_reminder_frequency_id == '') 
+        }
+
+        if($sends_email_endless == ctrans('texts.disabled') || $settings->endless_reminder_frequency_id == '0' || $settings->endless_reminder_frequency_id == '') {
             $reminder_schedule .= "{$label_endless}: " . ctrans('texts.disabled') ."<br>";
-        else 
+        } else {
             $reminder_schedule .= "{$label_endless}: {$days_endless} [{$sends_email_endless}]<br>";
-        
+        }
+
 
         return $reminder_schedule;
     }

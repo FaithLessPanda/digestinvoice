@@ -17,7 +17,7 @@ use App\Utils\Traits\GeneratesCounter;
 use Illuminate\Database\QueryException;
 
 /**
- * TaskRepository.
+ * App\Repositories\TaskRepository.
  */
 class TaskRepository extends BaseRepository
 {
@@ -45,7 +45,11 @@ class TaskRepository extends BaseRepository
         $task->saveQuietly();
 
         if ($this->new_task && ! $task->status_id) {
-            $this->setDefaultStatus($task);
+            $task->status_id = $this->setDefaultStatus($task);
+        }
+
+        if($this->new_task && (!$task->rate || $task->rate <= 0)) {
+            $task->rate = $task->getRate();
         }
 
         $task->number = empty($task->number) || ! array_key_exists('number', $data) ? $this->trySaving($task) : $data['number'];
@@ -97,7 +101,7 @@ class TaskRepository extends BaseRepository
         } else {
             $time_log = [];
         }
-        
+
         $key_values = array_column($time_log, 0);
         array_multisort($key_values, SORT_ASC, $time_log);
 
@@ -119,7 +123,7 @@ class TaskRepository extends BaseRepository
         }
 
         $task->calculated_start_date = $this->harvestStartDate($time_log, $task);
-        
+
         $task->time_log = json_encode($time_log);
 
 
@@ -135,9 +139,9 @@ class TaskRepository extends BaseRepository
 
     private function harvestStartDate($time_log, $task)
     {
-        
-        if(isset($time_log[0][0])){
-            return \Carbon\Carbon::createFromTimestamp($time_log[0][0])->addSeconds($task->company->utc_offset());
+
+        if(isset($time_log[0][0])) {
+            return \Carbon\Carbon::createFromTimestamp($time_log[0][0]);
         }
 
         return null;
@@ -274,7 +278,7 @@ class TaskRepository extends BaseRepository
 
     private function trySaving(Task $task)
     {
-        $x=1;
+        $x = 1;
 
         do {
             try {
@@ -284,7 +288,7 @@ class TaskRepository extends BaseRepository
             } catch(QueryException $e) {
                 $x++;
 
-                if ($x>50) {
+                if ($x > 50) {
                     $this->completed = false;
                 }
             }

@@ -101,7 +101,7 @@
           type: number
           format: float
           example: '10.00'
-          readOnly:
+          readOnly: true
         line_items:
           type: array
           description: 'An array of objects which define the line items of the invoice'
@@ -234,4 +234,8 @@
           description: 'Toggles charging taxes on custom surcharge amounts'
           type: boolean
           example: true
+        project_id:
+          description: 'The project associated with this invoice'
+          type: string
+          example: Opnel5aKBz
       type: object

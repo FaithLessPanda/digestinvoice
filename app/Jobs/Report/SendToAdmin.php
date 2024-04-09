@@ -20,12 +20,15 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
+use Illuminate\Queue\SerializesModels;
 
 class SendToAdmin implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable;
+    use InteractsWithQueue;
+    use Queueable;
+    use SerializesModels;
 
     protected Company $company;
 
@@ -52,7 +55,7 @@ class SendToAdmin implements ShouldQueue
         $export = new $this->report_class($this->company, $this->request);
         $csv = $export->run();
 
-        $nmo = new NinjaMailerObject;
+        $nmo = new NinjaMailerObject();
         $nmo->mailable = new DownloadReport($this->company, $csv, $this->file_name);
         $nmo->company = $this->company;
         $nmo->settings = $this->company->settings;

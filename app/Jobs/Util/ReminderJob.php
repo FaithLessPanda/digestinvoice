@@ -13,6 +13,7 @@ namespace App\Jobs\Util;
 
 use App\Utils\Ninja;
 use App\Models\Invoice;
+use App\Models\Webhook;
 use App\Libraries\MultiDB;
 use Illuminate\Bus\Queueable;
 use Illuminate\Support\Carbon;
@@ -25,6 +26,7 @@ use App\Utils\Traits\MakesReminders;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Queue\InteractsWithQueue;
+use Spatie\OpenTelemetry\Jobs\TraceAware;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 
@@ -129,9 +131,10 @@ class ReminderJob implements ShouldQueue
             $invoice->service()->touchReminder($reminder_template)->save();
             $fees = $this->calcLateFee($invoice, $reminder_template);
 
-            if($invoice->isLocked()) 
+            if($invoice->isLocked()) {
                 return $this->addFeeToNewInvoice($invoice, $reminder_template, $fees);
-            
+            }
+
             $invoice = $this->setLateFee($invoice, $fees[0], $fees[1]);
 
             //20-04-2022 fixes for endless reminders - generic template naming was wrong
@@ -139,7 +142,7 @@ class ReminderJob implements ShouldQueue
             if ($reminder_template == 'endless_reminder') {
                 $enabled_reminder = 'enable_reminder_endless';
             }
-            
+
             if (in_array($reminder_template, ['reminder1', 'reminder2', 'reminder3', 'reminder_endless', 'endless_reminder']) &&
         $invoice->client->getSetting($enabled_reminder) &&
         $invoice->client->getSetting('send_reminders') &&
@@ -149,6 +152,7 @@ class ReminderJob implements ShouldQueue
                         EmailEntity::dispatch($invitation, $invitation->company, $reminder_template);
                         nlog("Firing reminder email for invoice {$invoice->number} - {$reminder_template}");
                         $invoice->entityEmailEvent($invitation, $reminder_template);
+                        $invoice->sendEvent(Webhook::EVENT_REMIND_INVOICE, "client");
                     }
                 });
             }
@@ -184,7 +188,7 @@ class ReminderJob implements ShouldQueue
         $invoice->client_id = $over_due_invoice->client_id;
         $invoice->date = now()->format('Y-m-d');
         $invoice->due_date = now()->format('Y-m-d');
-                
+
         $invoice_item = new InvoiceItem();
         $invoice_item->type_id = '5';
         $invoice_item->product_key = trans('texts.fee');
@@ -204,7 +208,7 @@ class ReminderJob implements ShouldQueue
                 ->applyNumber()
                 ->markSent()
                 ->save();
-        
+
         $enabled_reminder = 'enable_'.$reminder_template;
         if ($reminder_template == 'endless_reminder') {
             $enabled_reminder = 'enable_reminder_endless';
@@ -219,6 +223,7 @@ class ReminderJob implements ShouldQueue
                     EmailEntity::dispatch($invitation, $invitation->company, $reminder_template);
                     nlog("Firing reminder email for invoice {$invoice->number} - {$reminder_template}");
                     $invoice->entityEmailEvent($invitation, $reminder_template);
+                    $invoice->sendEvent(Webhook::EVENT_REMIND_INVOICE, "client");
                 }
             });
         }
@@ -306,9 +311,8 @@ class ReminderJob implements ShouldQueue
         /**Refresh Invoice values*/
         $invoice = $invoice->calc()->getInvoice();
 
-        nlog('adjusting client balance and invoice balance by #'.$invoice->number.' '.($invoice->balance - $temp_invoice_balance));
-        $invoice->client->service()->updateBalance($invoice->balance - $temp_invoice_balance);
         $invoice->ledger()->updateInvoiceBalance($invoice->balance - $temp_invoice_balance, "Late Fee Adjustment for invoice {$invoice->number}");
+        $invoice->client->service()->calculateBalance();
 
         return $invoice;
     }

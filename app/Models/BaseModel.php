@@ -11,17 +11,16 @@
 
 namespace App\Models;
 
-use Illuminate\Support\Str;
-use Illuminate\Support\Carbon;
-use App\Utils\Traits\MakesHash;
 use App\Jobs\Entity\CreateRawPdf;
 use App\Jobs\Util\WebhookHandler;
 use App\Models\Traits\Excludable;
-use Illuminate\Database\Eloquent\Model;
-use App\Jobs\Vendor\CreatePurchaseOrderPdf;
+use App\Utils\Traits\MakesHash;
 use App\Utils\Traits\UserSessionAttributes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException as ModelNotFoundException;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 
 /**
  * Class BaseModel
@@ -37,7 +36,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException as ModelNotFoundExceptio
  * @property int $assigned_user_id
  * @method BaseModel service()
  * @property \App\Models\Company $company
- * @method static BaseModel find($value) 
+ * @method static BaseModel find($value)
  * @method static \Illuminate\Database\Eloquent\Builder|BaseModel<static> company()
  * @method static \Illuminate\Database\Eloquent\Builder|BaseModel|Illuminate\Database\Eloquent\Relations\BelongsTo|\Awobaz\Compoships\Database\Eloquent\Relations\BelongsTo|\App\Models\Company company()
  * @method static \Illuminate\Database\Eloquent\Builder|BaseModel|Illuminate\Database\Eloquent\Relations\HasMany|BaseModel orderBy()
@@ -68,7 +67,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException as ModelNotFoundExceptio
  * @method static \Illuminate\Database\Eloquent\Builder|BaseModel|\Illuminate\Database\Query\Builder withoutTrashed()
  * @mixin \Eloquent
  * @mixin \Illuminate\Database\Eloquent\Builder
- * 
+ *
  * @property \Illuminate\Support\Collection $tax_map
  * @property array $total_tax_map
  */
@@ -98,29 +97,25 @@ class BaseModel extends Model
 
     public function dateMutator($value)
     {
-        if (! empty($value)) {
-            return (new Carbon($value))->format('Y-m-d');
-        }
-
-        return $value;
+        return (new Carbon($value))->format('Y-m-d');
     }
 
-    public function __call($method, $params)
-    {
-        $entity = strtolower(class_basename($this));
+    // public function __call($method, $params)
+    // {
+    //     $entity = strtolower(class_basename($this));
 
-        if ($entity) {
-            $configPath = "modules.relations.$entity.$method";
+    //     if ($entity) {
+    //         $configPath = "modules.relations.$entity.$method";
 
-            if (config()->has($configPath)) {
-                $function = config()->get($configPath);
+    //         if (config()->has($configPath)) {
+    //             $function = config()->get($configPath);
 
-                return call_user_func_array([$this, $function[0]], $function[1]);
-            }
-        }
+    //             return call_user_func_array([$this, $function[0]], $function[1]);
+    //         }
+    //     }
 
-        return parent::__call($method, $params);
-    }
+    //     return parent::__call($method, $params);
+    // }
 
     /**
     * @param  \Illuminate\Database\Eloquent\Builder  $query
@@ -237,10 +232,25 @@ class BaseModel extends Model
         return $this->numberFormatter().'.'.$extension;
     }
 
-     /**
-     * @param string $extension
-     * @return string
-     */
+    public function getDeliveryNoteName($extension = 'pdf')
+    {
+
+        $number =  ctrans("texts.delivery_note"). "_" . $this->numberFormatter().'.'.$extension;
+
+        $formatted_number =  mb_ereg_replace("([^\w\s\d\-_~,;\[\]\(\).])", '', $number);
+
+        $formatted_number = mb_ereg_replace("([\.]{2,})", '', $formatted_number);
+
+        $formatted_number = preg_replace('/\s+/', '_', $formatted_number);
+
+        return \Illuminate\Support\Str::ascii($formatted_number);
+
+    }
+
+    /**
+    * @param string $extension
+    * @return string
+    */
     public function getEFileName($extension = 'pdf')
     {
         return ctrans("texts.e_invoice"). "_" . $this->numberFormatter().'.'.$extension;
@@ -256,7 +266,7 @@ class BaseModel extends Model
 
         $formatted_number = preg_replace('/\s+/', '_', $formatted_number);
 
-        return $formatted_number;
+        return \Illuminate\Support\Str::ascii($formatted_number);
     }
 
     public function translate_entity()
@@ -277,9 +287,9 @@ class BaseModel extends Model
         $subscriptions = Webhook::where('company_id', $this->company_id)
                                  ->where('event_id', $event_id)
                                  ->exists();
-                            
+
         if ($subscriptions) {
-            WebhookHandler::dispatch($event_id, $this, $this->company, $additional_data);
+            WebhookHandler::dispatch($event_id, $this->withoutRelations(), $this->company, $additional_data);
         }
     }
 
@@ -303,10 +313,28 @@ class BaseModel extends Model
             throw new \Exception('Hard fail, could not create an invitation.');
         }
 
-        if($this instanceof \App\Models\PurchaseOrder) 
-            return "data:application/pdf;base64,".base64_encode((new CreatePurchaseOrderPdf($invitation, $invitation->company->db))->rawPdf());
-        
-        return "data:application/pdf;base64,".base64_encode((new CreateRawPdf($invitation, $invitation->company->db))->handle());
+        return "data:application/pdf;base64,".base64_encode((new CreateRawPdf($invitation))->handle());
+
+    }
+
+    /**
+     * Takes a entity prop as first argument
+     * along with an array of variables and performs
+     * a string replace on the prop.
+     *
+     * @param string $field
+     * @param array $variables
+     * @return string
+     */
+    public function parseHtmlVariables(string $field, array $variables): string
+    {
+        if(!$this->{$field}) {
+            return '';
+        }
+
+        $section = strtr($this->{$field}, $variables['labels']);
+
+        return strtr($section, $variables['values']);
 
     }
 }

@@ -12,15 +12,14 @@
 namespace App\Transformers;
 
 use App\Models\Client;
-use App\Models\Vendor;
-use App\Models\Expense;
-use App\Models\Invoice;
 use App\Models\Document;
+use App\Models\Expense;
 use App\Models\ExpenseCategory;
+use App\Models\Invoice;
+use App\Models\Vendor;
 use App\Utils\Traits\MakesHash;
-use League\Fractal\Resource\Item;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use App\Transformers\ExpenseCategoryTransformer;
+use League\Fractal\Resource\Item;
 
 /**
  * class ExpenseTransformer.
@@ -29,15 +28,15 @@ class ExpenseTransformer extends EntityTransformer
 {
     use MakesHash;
     use SoftDeletes;
-    
-    protected $defaultIncludes = [
+
+    protected array $defaultIncludes = [
         'documents',
     ];
 
     /**
      * @var array
      */
-    protected $availableIncludes = [
+    protected array $availableIncludes = [
         'client',
         'vendor',
         'category',

@@ -50,7 +50,7 @@ class ValidCreditsRules implements Rule
         }
 
         $unique_array = [];
-        
+
         $total_credit_amount = array_sum(array_column($this->input['credits'], 'amount'));
 
         if ($total_credit_amount <= 0) {
@@ -76,7 +76,7 @@ class ValidCreditsRules implements Rule
                 return false;
             }
 
-            if($cred->status_id == Credit::STATUS_DRAFT){
+            if($cred->status_id == Credit::STATUS_DRAFT) {
                 $cred->service()->markSent()->save();
                 $cred = $cred->fresh();
             }

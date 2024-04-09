@@ -19,6 +19,8 @@ use Illuminate\Support\Carbon;
  * App\Models\Task
  *
  * @property int $id
+ * @property string|null $hash
+ * @property object|null $meta
  * @property int $user_id
  * @property int|null $assigned_user_id
  * @property int $company_id
@@ -118,6 +120,19 @@ class Task extends BaseModel
         'number',
         'is_date_based',
         'status_order',
+        'hash',
+        'meta',
+    ];
+
+    protected $casts = [
+        'meta' => 'object',
+        'updated_at' => 'timestamp',
+        'created_at' => 'timestamp',
+        'deleted_at' => 'timestamp',
+    ];
+
+    protected $with = [
+        // 'project',
     ];
 
     protected $touches = [];
@@ -160,6 +175,20 @@ class Task extends BaseModel
     public function status()
     {
         return $this->belongsTo(TaskStatus::class)->withTrashed();
+    }
+
+    public function stringStatus()
+    {
+        if($this->invoice_id) {
+            return '<h5><span class="badge badge-success">'.ctrans('texts.invoiced').'</span></h5>';
+        }
+
+        if($this->status) {
+            return '<h5><span class="badge badge-primary">' . $this->status?->name ?? '';
+        }
+
+        return '';
+
     }
 
     public function invoice()
@@ -226,4 +255,79 @@ class Task extends BaseModel
     {
         return ctrans('texts.task');
     }
+
+    public function getRate(): float
+    {
+        if($this->project && $this->project->task_rate > 0) {
+            return $this->project->task_rate;
+        }
+
+        if($this->client) {
+            return $this->client->getSetting('default_task_rate');
+        }
+
+        return $this->company->settings->default_task_rate ?? 0;
+    }
+
+    public function processLogs()
+    {
+
+        return
+        collect(json_decode($this->time_log, true))->map(function ($log) {
+
+            $parent_entity = $this->client ?? $this->company;
+
+            if($log[0]) {
+                $log[0] = Carbon::createFromTimestamp($log[0])->format($parent_entity->date_format().' H:i:s');
+            }
+
+            if($log[1] && $log[1] != 0) {
+                $log[1] = Carbon::createFromTimestamp($log[1])->format($parent_entity->date_format().' H:i:s');
+            } else {
+                $log[1] = ctrans('texts.running');
+            }
+
+            return $log;
+        })->toArray();
+    }
+
+
+    public function processLogsExpandedNotation()
+    {
+
+        return
+        collect(json_decode($this->time_log, true))->map(function ($log) {
+
+            $parent_entity = $this->client ?? $this->company;
+            $logged = [];
+
+            if($log[0] && $log[1] != 0) {
+                $duration = $log[1] - $log[0];
+            } else {
+                $duration = 0;
+            }
+
+            if($log[0]) {
+                $logged['start_date_raw'] = $log[0];
+            }
+            $logged['start_date'] = Carbon::createFromTimestamp($log[0])->setTimeZone($this->company->timezone()->name)->format($parent_entity->date_format().' H:i:s');
+
+            if($log[1] && $log[1] != 0) {
+                $logged['end_date_raw'] = $log[1];
+                $logged['end_date'] = Carbon::createFromTimestamp($log[1])->setTimeZone($this->company->timezone()->name)->format($parent_entity->date_format().' H:i:s');
+            } else {
+                $logged['end_date_raw'] = 0;
+                $logged['end_date'] = ctrans('texts.running');
+            }
+
+            $logged['description'] =  $log[2] ?? '';
+            $logged['billable'] = $log[3] ?? false;
+            $logged['duration_raw'] = $duration;
+            $logged['duration'] = gmdate("H:i:s", $duration);
+
+            return $logged;
+
+        })->toArray();
+    }
+
 }

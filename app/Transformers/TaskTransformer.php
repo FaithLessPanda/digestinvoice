@@ -11,13 +11,13 @@
 
 namespace App\Transformers;
 
-use App\Models\Task;
-use App\Models\User;
 use App\Models\Client;
+use App\Models\Document;
 use App\Models\Invoice;
 use App\Models\Project;
-use App\Models\Document;
+use App\Models\Task;
 use App\Models\TaskStatus;
+use App\Models\User;
 use App\Utils\Traits\MakesHash;
 use League\Fractal\Resource\Item;
 
@@ -28,7 +28,7 @@ class TaskTransformer extends EntityTransformer
 {
     use MakesHash;
 
-    protected $defaultIncludes = [
+    protected array $defaultIncludes = [
         'documents',
         'project',
     ];
@@ -36,7 +36,7 @@ class TaskTransformer extends EntityTransformer
     /**
      * @var array
      */
-    protected $availableIncludes = [
+    protected array $availableIncludes = [
         'client',
         'status',
         'project',
@@ -55,7 +55,7 @@ class TaskTransformer extends EntityTransformer
     {
         $transformer = new InvoiceTransformer($this->serializer);
 
-        if (!$task->user) {
+        if (!$task->invoice) {
             return null;
         }
 
@@ -100,11 +100,10 @@ class TaskTransformer extends EntityTransformer
     {
         $transformer = new ProjectTransformer($this->serializer);
 
-        if (!$task->project) {
-            return null;
-        }
+        if ($task->project) 
+            return $this->includeItem($task->project, $transformer, Project::class);
 
-        return $this->includeItem($task->project, $transformer, Project::class);
+        return null;
     }
 
     public function transform(Task $task)

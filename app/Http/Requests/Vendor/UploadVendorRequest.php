@@ -20,7 +20,7 @@ class UploadVendorRequest extends Request
      *
      * @return bool
      */
-    public function authorize() : bool
+    public function authorize(): bool
     {
         return auth()->user()->can('edit', $this->vendor);
     }
@@ -50,8 +50,9 @@ class UploadVendorRequest extends Request
     {
         $input = $this->all();
 
-        if(isset($input['is_public'])) 
+        if(isset($input['is_public'])) {
             $input['is_public'] = $this->toBoolean($input['is_public']);
+        }
 
         $this->replace($input);
     }

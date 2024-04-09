@@ -113,7 +113,7 @@ class ACH
     }
 
     /* If the bank transfer token is PENDING - we need to verify!! */
-//
+    //
 
     public function verificationView(ClientGatewayToken $token)
     {
@@ -277,7 +277,7 @@ class ACH
 
     private function storePaymentMethod($response, $payment_method_id)
     {
-        $payment_meta = new \stdClass;
+        $payment_meta = new \stdClass();
         $payment_meta->exp_month = (string) '';
         $payment_meta->exp_year = (string) '';
         $payment_meta->brand = (string) $response->bank_name;

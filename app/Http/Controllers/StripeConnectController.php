@@ -15,11 +15,9 @@ use App\DataMapper\FeesAndLimits;
 use App\Factory\CompanyGatewayFactory;
 use App\Http\Requests\StripeConnect\InitializeStripeConnectRequest;
 use App\Libraries\MultiDB;
-use App\Models\Client;
 use App\Models\Company;
 use App\Models\CompanyGateway;
 use App\Models\GatewayType;
-use App\PaymentDrivers\Stripe\Jobs\StripeWebhook;
 use Stripe\Exception\ApiErrorException;
 
 class StripeConnectController extends BaseController
@@ -53,7 +51,7 @@ class StripeConnectController extends BaseController
         }
 
         $stripe_client_id = config('ninja.ninja_stripe_client_id');
-        $redirect_uri = 'https://invoicing.co/stripe/completed';
+        $redirect_uri = config('ninja.app_url').'/stripe/completed';
         $endpoint = "https://connect.stripe.com/oauth/authorize?response_type=code&client_id={$stripe_client_id}&redirect_uri={$redirect_uri}&scope=read_write&state={$token}";
 
         return redirect($endpoint);
@@ -86,6 +84,9 @@ class StripeConnectController extends BaseController
                 'grant_type' => 'authorization_code',
                 'code' => $request->input('code'),
             ]);
+
+            nlog($response);
+
         } catch (\Exception $e) {
             return view('auth.connect.access_denied');
         }
@@ -101,8 +102,8 @@ class StripeConnectController extends BaseController
 
         if (! $company_gateway) {
             $company_gateway = CompanyGatewayFactory::create($company->id, $company->owner()->id);
-            $fees_and_limits = new \stdClass;
-            $fees_and_limits->{GatewayType::CREDIT_CARD} = new FeesAndLimits;
+            $fees_and_limits = new \stdClass();
+            $fees_and_limits->{GatewayType::CREDIT_CARD} = new FeesAndLimits();
             $company_gateway->gateway_key = 'd14dd26a47cecc30fdd65700bfb67b34';
             $company_gateway->fees_and_limits = $fees_and_limits;
             $company_gateway->setConfig([]);
@@ -119,17 +120,32 @@ class StripeConnectController extends BaseController
             'refresh_token' => $response->refresh_token,
             'access_token' => $response->access_token,
             'appleDomainVerification' => '',
+            // "statementDescriptor" => "",
         ];
 
         $company_gateway->setConfig($payload);
         $company_gateway->save();
 
+        try {
+            $stripe = $company_gateway->driver()->init();
+            $a = \Stripe\Account::retrieve($response->stripe_user_id, $stripe->stripe_connect_auth);
+
+            if($a->business_name ?? false) {
+                $company_gateway->label = substr("Stripe - {$a->business_name}", 0, 250);
+                $company_gateway->save();
+            }
+        } catch(\Exception $e) {
+            nlog("could not harvest stripe company name");
+        }
+
+        // nlog("Stripe Connect Redirect URI = {$redirect_uri}");
+
         // StripeWebhook::dispatch($company->company_key, $company_gateway->id);
-        // if(isset($request->getTokenContent()['is_react']) && $request->getTokenContent()['is_react']) {
-            $redirect_uri = 'https://app.invoicing.co/#/settings/online_payments';
-        // } else {
-        //     $redirect_uri = 'https://invoicing.co/stripe/completed';
-        // }
+        if(isset($request->getTokenContent()['is_react']) && $request->getTokenContent()['is_react']) {
+            $redirect_uri = config('ninja.react_url').'/#/settings/online_payments';
+        } else {
+            $redirect_uri = config('ninja.app_url').'/stripe/completed';
+        }
 
         //response here
         return view('auth.connect.completed', ['url' => $redirect_uri]);

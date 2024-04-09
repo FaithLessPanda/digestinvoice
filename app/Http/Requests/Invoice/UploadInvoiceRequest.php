@@ -12,7 +12,6 @@
 namespace App\Http\Requests\Invoice;
 
 use App\Http\Requests\Request;
-use Illuminate\Http\UploadedFile;
 
 class UploadInvoiceRequest extends Request
 {
@@ -21,11 +20,11 @@ class UploadInvoiceRequest extends Request
      *
      * @return bool
      */
-    public function authorize() : bool
+    public function authorize(): bool
     {
         /** @var \App\Models\User $user */
         $user = auth()->user();
-        
+
         return $user->can('edit', $this->invoice);
     }
 
@@ -46,7 +45,7 @@ class UploadInvoiceRequest extends Request
         }
 
         $rules['is_public'] = 'sometimes|boolean';
-        
+
         return $rules;
     }
 
@@ -59,6 +58,6 @@ class UploadInvoiceRequest extends Request
         }
 
         $this->replace($input);
-      
+
     }
 }

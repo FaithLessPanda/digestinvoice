@@ -22,13 +22,12 @@ use App\Helpers\Mail\GmailTransport;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\ServiceProvider;
 use App\Http\Middleware\SetDomainNameDb;
 use Illuminate\Queue\Events\JobProcessing;
 use App\Helpers\Mail\Office365MailTransport;
-use Illuminate\Support\Facades\ParallelTesting;
 use Illuminate\Database\Eloquent\Relations\Relation;
 
 class AppServiceProvider extends ServiceProvider
@@ -74,6 +73,11 @@ class AppServiceProvider extends ServiceProvider
             ]);
         }
 
+        Livewire::setUpdateRoute(function ($handle) {
+            return Route::post('/livewire/update', $handle)
+                ->middleware('client');
+        });
+
         /* Ensure we don't have stale state in jobs */
         Queue::before(function (JobProcessing $event) {
             App::forgetInstance('truthsource');
@@ -98,21 +102,20 @@ class AppServiceProvider extends ServiceProvider
                 'transport' => 'postmark',
                 'token' => $postmark_key
             ]));
-     
+
             return $this;
         });
-        
-    
+
         Mailer::macro('mailgun_config', function (string $secret, string $domain, string $endpoint = 'api.mailgun.net') {
             // @phpstan-ignore /** @phpstan-ignore-next-line **/
-            Mailer::setSymfonyTransport(app('mail.manager')->createSymfonyTransport([ 
+            Mailer::setSymfonyTransport(app('mail.manager')->createSymfonyTransport([
                 'transport' => 'mailgun',
                 'secret' => $secret,
                 'domain' => $domain,
                 'endpoint' => $endpoint,
                 'scheme' => config('services.mailgun.scheme'),
             ]));
- 
+
             return $this;
         });
 

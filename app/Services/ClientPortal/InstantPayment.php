@@ -44,6 +44,16 @@ class InstantPayment
 
     public function run()
     {
+        nlog($this->request->all());
+
+        $cc = auth()->guard('contact')->user();
+
+        $cc->first_name = $this->request->contact_first_name;
+        $cc->last_name = $this->request->contact_last_name;
+        $cc->email = $this->request->contact_email;
+
+        $cc->save();
+
         $is_credit_payment = false;
 
         $tokens = [];
@@ -82,6 +92,8 @@ class InstantPayment
                 ->route('client.invoices.index')
                 ->with(['message' => 'No payable invoices selected.']);
         }
+
+        $invoices = Invoice::query()->whereIn('id', $this->transformKeys($payable_invoices->pluck('invoice_id')->toArray()))->withTrashed()->get();
 
         $client = $invoices->first()->client;
         $settings = $client->getMergedSettings();
@@ -175,10 +187,10 @@ class InstantPayment
         }
 
         if ($this->request->has('signature') && ! is_null($this->request->signature) && ! empty($this->request->signature)) {
-                
+
             $contact_id = auth()->guard('contact')->user() ? auth()->guard('contact')->user()->id : null;
 
-            $invoices->each(function ($invoice) use($contact_id) {
+            $invoices->each(function ($invoice) use ($contact_id) {
                 InjectSignature::dispatch($invoice, $contact_id, $this->request->signature, request()->getClientIp());
             });
         }
@@ -192,9 +204,9 @@ class InstantPayment
         $starting_invoice_amount = $first_invoice->balance;
 
         /* Schedule a job to check the gateway fees for this invoice*/
-        if (Ninja::isHosted()) {
-            CheckGatewayFee::dispatch($first_invoice->id, $client->company->db)->delay(800);
-        }
+        // if (Ninja::isHosted()) {
+        //     CheckGatewayFee::dispatch($first_invoice->id, $client->company->db)->delay(800);
+        // }
 
         if ($gateway) {
             $first_invoice->service()->addGatewayFee($gateway, $payment_method_id, $invoice_totals)->save();
@@ -239,7 +251,7 @@ class InstantPayment
             }
         }
 
-        $payment_hash = new PaymentHash;
+        $payment_hash = new PaymentHash();
         $payment_hash->hash = Str::random(32);
         $payment_hash->data = $hash_data;
         $payment_hash->fee_total = $fee_totals;

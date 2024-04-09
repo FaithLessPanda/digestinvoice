@@ -11,23 +11,25 @@
 
 namespace App\Export\CSV;
 
-use App\Libraries\MultiDB;
-use App\Models\Company;
-use App\Models\PurchaseOrder;
-use App\Transformers\PurchaseOrderTransformer;
 use App\Utils\Ninja;
-use App\Utils\Number;
-use Illuminate\Support\Facades\App;
 use League\Csv\Writer;
+use App\Models\Company;
+use App\Libraries\MultiDB;
+use App\Models\PurchaseOrder;
+use Illuminate\Support\Facades\App;
+use App\Export\Decorators\Decorator;
+use Illuminate\Database\Eloquent\Builder;
+use App\Transformers\PurchaseOrderTransformer;
 
 class PurchaseOrderExport extends BaseExport
 {
-
     private $purchase_order_transformer;
 
     public string $date_key = 'date';
 
     public Writer $csv;
+
+    private Decorator $decorator;
 
     public array $entity_keys = [
         'amount' => 'purchase_order.amount',
@@ -53,7 +55,7 @@ class PurchaseOrderExport extends BaseExport
         'po_number' => 'purchase_order.po_number',
         'private_notes' => 'purchase_order.private_notes',
         'public_notes' => 'purchase_order.public_notes',
-        'status' => 'purchase_order.status_id',
+        'status' => 'purchase_order.status',
         'tax_name1' => 'purchase_order.tax_name1',
         'tax_name2' => 'purchase_order.tax_name2',
         'tax_name3' => 'purchase_order.tax_name3',
@@ -79,25 +81,24 @@ class PurchaseOrderExport extends BaseExport
         $this->company = $company;
         $this->input = $input;
         $this->purchase_order_transformer = new PurchaseOrderTransformer();
+        $this->decorator = new Decorator();
     }
 
-    public function run()
+
+    public function init(): Builder
     {
+
         MultiDB::setDb($this->company->db);
         App::forgetInstance('translator');
         App::setLocale($this->company->locale());
         $t = app('translator');
         $t->replace(Ninja::transformTranslations($this->company->settings));
 
-        //load the CSV document from a string
-        $this->csv = Writer::createFromString();
-
         if (count($this->input['report_keys']) == 0) {
-            $this->input['report_keys'] = array_values($this->entity_keys);
+            $this->input['report_keys'] = array_values($this->purchase_order_report_keys);
         }
 
-        //insert the header
-        $this->csv->insertOne($this->buildHeader());
+        $this->input['report_keys'] = array_merge($this->input['report_keys'], array_diff($this->forced_vendor_fields, $this->input['report_keys']));
 
         $query = PurchaseOrder::query()
                         ->withTrashed()
@@ -107,9 +108,43 @@ class PurchaseOrderExport extends BaseExport
 
         $query = $this->addDateRange($query);
 
-        // if(isset($this->input['status'])) {
-        //     $query = $this->addPurchaseOrderStatusFilter($query, $this->input['status']);
-        // }
+        if($this->input['document_email_attachment'] ?? false) {
+            $this->queueDocuments($query);
+        }
+
+        return $query;
+
+    }
+
+    public function returnJson()
+    {
+        $query = $this->init();
+
+        $headerdisplay = $this->buildHeader();
+
+        $header = collect($this->input['report_keys'])->map(function ($key, $value) use ($headerdisplay) {
+            return ['identifier' => $key, 'display_value' => $headerdisplay[$value]];
+        })->toArray();
+
+        $report = $query->cursor()
+                ->map(function ($resource) {
+                    $row = $this->buildRow($resource);
+                    return $this->processMetaData($row, $resource);
+                })->toArray();
+
+        return array_merge(['columns' => $header], $report);
+    }
+
+
+    public function run()
+    {
+        $query = $this->init();
+
+        //load the CSV document from a string
+        $this->csv = Writer::createFromString();
+
+        //insert the header
+        $this->csv->insertOne($this->buildHeader());
 
         $query->cursor()
             ->each(function ($purchase_order) {
@@ -119,36 +154,33 @@ class PurchaseOrderExport extends BaseExport
         return $this->csv->toString();
     }
 
-    private function buildRow(PurchaseOrder $purchase_order) :array
+    private function buildRow(PurchaseOrder $purchase_order): array
     {
         $transformed_purchase_order = $this->purchase_order_transformer->transform($purchase_order);
 
         $entity = [];
 
         foreach (array_values($this->input['report_keys']) as $key) {
-            $keyval = array_search($key, $this->entity_keys);
 
-            if(!$keyval) {
-                $keyval = array_search(str_replace("purchase_order.", "", $key), $this->entity_keys) ?? $key;
-            }
+            $parts = explode('.', $key);
 
-            if(!$keyval) {
-                $keyval = $key;
-            }
-
-            if (array_key_exists($key, $transformed_purchase_order)) {
-                $entity[$keyval] = $transformed_purchase_order[$key];
-            } elseif (array_key_exists($keyval, $transformed_purchase_order)) {
-                $entity[$keyval] = $transformed_purchase_order[$keyval];
+            if (is_array($parts) && $parts[0] == 'purchase_order' && array_key_exists($parts[1], $transformed_purchase_order)) {
+                $entity[$key] = $transformed_purchase_order[$parts[1]];
             } else {
-                $entity[$keyval] = $this->resolveKey($keyval, $purchase_order, $this->purchase_order_transformer);
-            }
-        }
+                // nlog($key);
+                $entity[$key] = $this->decorator->transform($key, $purchase_order);
+                // $entity[$key] = '';
 
+                // $entity[$key] = $this->resolveKey($key, $purchase_order, $this->purchase_order_transformer);
+            }
+
+
+        }
+        // return $entity;
         return $this->decorateAdvancedFields($purchase_order, $entity);
     }
 
-    private function decorateAdvancedFields(PurchaseOrder $purchase_order, array $entity) :array
+    private function decorateAdvancedFields(PurchaseOrder $purchase_order, array $entity): array
     {
         if (in_array('country_id', $this->input['report_keys'])) {
             $entity['country'] = $purchase_order->vendor->country ? ctrans("texts.country_{$purchase_order->vendor->country->name}") : '';
@@ -162,9 +194,18 @@ class PurchaseOrderExport extends BaseExport
             $entity['vendor'] = $purchase_order->vendor->present()->name();
         }
 
-        if (in_array('status_id', $this->input['report_keys'])) {
-            $entity['status'] = $purchase_order->stringStatus($purchase_order->status_id);
+        if (in_array('purchase_order.status', $this->input['report_keys'])) {
+            $entity['purchase_order.status'] = $purchase_order->stringStatus($purchase_order->status_id);
         }
+
+        if (in_array('purchase_order.user_id', $this->input['report_keys'])) {
+            $entity['purchase_order.user_id'] = $purchase_order->user ? $purchase_order->user->present()->name() : '';
+        }
+
+        if (in_array('purchase_order.assigned_user_id', $this->input['report_keys'])) {
+            $entity['purchase_order.assigned_user_id'] = $purchase_order->assigned_user ? $purchase_order->assigned_user->present()->name() : '';
+        }
+
 
         return $entity;
     }

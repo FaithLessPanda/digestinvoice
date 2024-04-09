@@ -45,6 +45,8 @@ class MarkSent extends AbstractService
              ->ledger()
              ->updateInvoiceBalance($adjustment, "Invoice {$this->invoice->number} marked as sent.");
 
+        $this->invoice->client->service()->calculateBalance();
+
         /* Perform additional actions on invoice */
         $this->invoice
              ->service()
@@ -53,18 +55,14 @@ class MarkSent extends AbstractService
              ->setReminder()
              ->save();
 
-        /*Adjust client balance*/
-        $this->invoice->client->service()->updateBalance($adjustment)->save();
-
         $this->invoice->markInvitationsSent();
 
         event(new InvoiceWasUpdated($this->invoice, $this->invoice->company, Ninja::eventVars(auth()->user() ? auth()->user()->id : null)));
 
         if ($fire_webhook) {
             event('eloquent.updated: App\Models\Invoice', $this->invoice);
+            $this->invoice->sendEvent(Webhook::EVENT_SENT_INVOICE, "client");
         }
-
-        $this->invoice->sendEvent(Webhook::EVENT_SENT_INVOICE, "client");
 
         return $this->invoice->fresh();
     }

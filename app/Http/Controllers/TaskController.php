@@ -15,6 +15,7 @@ use App\Events\Task\TaskWasCreated;
 use App\Events\Task\TaskWasUpdated;
 use App\Factory\TaskFactory;
 use App\Filters\TaskFilters;
+use App\Http\Requests\Task\BulkTaskRequest;
 use App\Http\Requests\Task\CreateTaskRequest;
 use App\Http\Requests\Task\DestroyTaskRequest;
 use App\Http\Requests\Task\EditTaskRequest;
@@ -27,6 +28,7 @@ use App\Models\Account;
 use App\Models\Task;
 use App\Models\TaskStatus;
 use App\Repositories\TaskRepository;
+use App\Services\Template\TemplateAction;
 use App\Transformers\TaskTransformer;
 use App\Utils\Ninja;
 use App\Utils\Traits\BulkOptions;
@@ -274,7 +276,7 @@ class TaskController extends BaseController
         $old_task = json_decode(json_encode($task));
 
         $task = $this->task_repo->save($request->all(), $task);
-        
+
         $task = $this->task_repo->triggeredActions($request, $task);
 
         if ($task->status_order != $old_task->status_order) {
@@ -327,7 +329,7 @@ class TaskController extends BaseController
      *     )
      */
     public function create(CreateTaskRequest $request)
-    {   
+    {
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
@@ -497,16 +499,36 @@ class TaskController extends BaseController
      *       ),
      *     )
      */
-    public function bulk()
+    public function bulk(BulkTaskRequest $request)
     {
-        $action = request()->input('action');
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
 
-        $ids = request()->input('ids');
-        $tasks = Task::withTrashed()->find($this->transformKeys($ids));
+        $action = $request->input('action');
 
-        $tasks->each(function ($task, $key) use ($action) {
-            /** @var \App\Models\User $user */
-                $user = auth()->user();
+        $ids = $request->input('ids');
+
+        $tasks = Task::withTrashed()->whereIn('id', $this->transformKeys($ids))->company()->get();
+
+        if($action == 'template' && $user->can('view', $tasks->first())) {
+
+            $hash_or_response = request()->boolean('send_email') ? 'email sent' : \Illuminate\Support\Str::uuid();
+
+            TemplateAction::dispatch(
+                $tasks->pluck('hashed_id')->toArray(),
+                $request->template_id,
+                Task::class,
+                $user->id,
+                $user->company(),
+                $user->company()->db,
+                $hash_or_response,
+                $request->boolean('send_email')
+            );
+
+            return response()->json(['message' => $hash_or_response], 200);
+        }
+
+        $tasks->each(function ($task) use ($action, $user) {
             if ($user->can('edit', $task)) {
                 $this->task_repo->{$action}($task);
             }
@@ -629,11 +651,11 @@ class TaskController extends BaseController
     {
         $task_statuses = $request->input('status_ids');
         $tasks = $request->input('task_ids');
-        
+
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
-        collect($task_statuses)->each(function ($task_status_hashed_id, $key) use($user){
+        collect($task_statuses)->each(function ($task_status_hashed_id, $key) use ($user) {
             $task_status = TaskStatus::query()->where('id', $this->decodePrimaryKey($task_status_hashed_id))
                                      ->where('company_id', $user->company()->id)
                                      ->withTrashed()

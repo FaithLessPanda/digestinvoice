@@ -11,26 +11,23 @@
 
 namespace App\Http\Controllers;
 
-use App\Utils\Ninja;
-use Illuminate\Http\Request;
-use App\Jobs\Util\UnlinkFile;
 use App\Exceptions\SystemError;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 
 class ProtectedDownloadController extends BaseController
 {
-
-    public function index(Request $request)
+    public function index(Request $request, string $hash)
     {
+        /** @var string $hashed_path */
+        $hashed_path = Cache::pull($hash);
 
-        $hashed_path = Cache::pull($request->hash);
-        
         if (!$hashed_path) {
             throw new SystemError('File no longer available', 404);
             abort(404, 'File no longer available');
         }
-        
+
         return response()->streamDownload(function () use ($hashed_path) {
             echo Storage::get($hashed_path);
         }, basename($hashed_path), []);

@@ -11,31 +11,31 @@
 
 namespace App\Exceptions;
 
-use Throwable;
-use PDOException;
 use App\Utils\Ninja;
-use Sentry\State\Scope;
-use Illuminate\Support\Arr;
-use Illuminate\Http\Request;
-use InvalidArgumentException;
-use Sentry\Laravel\Integration;
-use Illuminate\Support\Facades\Schema;
 use Aws\Exception\CredentialsException;
 use GuzzleHttp\Exception\ConnectException;
-use Illuminate\Auth\AuthenticationException;
-use League\Flysystem\UnableToCreateDirectory;
-use Illuminate\Session\TokenMismatchException;
-use Illuminate\Validation\ValidationException;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Queue\MaxAttemptsExceededException;
-use Illuminate\Http\Exceptions\ThrottleRequestsException;
-use Symfony\Component\Process\Exception\RuntimeException;
+use Illuminate\Auth\AuthenticationException;
+use Illuminate\Database\Eloquent\ModelNotFoundException as ModelNotFoundException;
 use Illuminate\Database\Eloquent\RelationNotFoundException;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
+use Illuminate\Http\Exceptions\ThrottleRequestsException;
+use Illuminate\Http\Request;
+use Illuminate\Queue\MaxAttemptsExceededException;
+use Illuminate\Session\TokenMismatchException;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
+use League\Flysystem\UnableToCreateDirectory;
+use PDOException;
+use Sentry\Laravel\Integration;
+use Sentry\State\Scope;
 use Symfony\Component\Console\Exception\CommandNotFoundException;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
-use Illuminate\Database\Eloquent\ModelNotFoundException as ModelNotFoundException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\Process\Exception\RuntimeException;
+use Throwable;
 
 class Handler extends ExceptionHandler
 {
@@ -104,10 +104,10 @@ class Handler extends ExceptionHandler
 
         if (Ninja::isHosted()) {
 
-            if($exception instanceof ThrottleRequestsException && class_exists(\Modules\Admin\Events\ThrottledExceptionRaised::class)) {
-                $uri = urldecode(request()->getRequestUri());
-                // event(new \Modules\Admin\Events\ThrottledExceptionRaised(auth()->user()?->account?->key, $uri, request()->ip()));
-            }
+            // if($exception instanceof ThrottleRequestsException && class_exists(\Modules\Admin\Events\ThrottledExceptionRaised::class)) {
+            // $uri = urldecode(request()->getRequestUri());
+            // event(new \Modules\Admin\Events\ThrottledExceptionRaised(auth()->user()?->account?->key, $uri, request()->ip()));
+            // }
 
             Integration::configureScope(function (Scope $scope): void {
                 $name = 'hosted@invoiceninja.com';
@@ -214,7 +214,7 @@ class Handler extends ExceptionHandler
     public function render($request, Throwable $exception)
     {
         if ($exception instanceof ModelNotFoundException && $request->expectsJson()) {
-            return response()->json(['message'=>$exception->getMessage()], 400);
+            return response()->json(['message' => $exception->getMessage()], 400);
         } elseif ($exception instanceof InternalPDFFailure && $request->expectsJson()) {
             return response()->json(['message' => $exception->getMessage()], 500);
         } elseif ($exception instanceof PhantomPDFFailure && $request->expectsJson()) {
@@ -222,11 +222,11 @@ class Handler extends ExceptionHandler
         } elseif ($exception instanceof FilePermissionsFailure) {
             return response()->json(['message' => $exception->getMessage()], 500);
         } elseif ($exception instanceof ThrottleRequestsException && $request->expectsJson()) {
-            return response()->json(['message'=>'Too many requests'], 429);
-        // } elseif ($exception instanceof FatalThrowableError && $request->expectsJson()) {
-        //     return response()->json(['message'=>'Fatal error'], 500); //@deprecated
+            return response()->json(['message' => 'Too many requests'], 429);
+            // } elseif ($exception instanceof FatalThrowableError && $request->expectsJson()) {
+            //     return response()->json(['message'=>'Fatal error'], 500); //@deprecated
         } elseif ($exception instanceof AuthorizationException && $request->expectsJson()) {
-            return response()->json(['message'=> $exception->getMessage()], 401);
+            return response()->json(['message' => $exception->getMessage()], 401);
         } elseif ($exception instanceof TokenMismatchException) {
             return redirect()
                     ->back()
@@ -235,9 +235,9 @@ class Handler extends ExceptionHandler
                         'message' => ctrans('texts.token_expired'),
                         'message-type' => 'danger', ]);
         } elseif ($exception instanceof NotFoundHttpException && $request->expectsJson()) {
-            return response()->json(['message'=>'Route does not exist'], 404);
+            return response()->json(['message' => 'Route does not exist'], 404);
         } elseif ($exception instanceof MethodNotAllowedHttpException && $request->expectsJson()) {
-            return response()->json(['message'=>'Method not supported for this route'], 404);
+            return response()->json(['message' => 'Method not supported for this route'], 404);
         } elseif ($exception instanceof ValidationException && $request->expectsJson()) {
             return response()->json(['message' => 'The given data was invalid.', 'errors' => $exception->validator->getMessageBag()], 422);
         } elseif ($exception instanceof RelationNotFoundException && $request->expectsJson()) {
@@ -270,6 +270,9 @@ class Handler extends ExceptionHandler
                 break;
             case 'vendor':
                 $login = 'vendor.catchall';
+                break;
+            case 'ronin':
+                $login = 'ronin.login';
                 break;
             default:
                 $login = 'default';

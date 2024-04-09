@@ -11,31 +11,33 @@
 
 namespace App\Import\Providers;
 
-use App\Models\User;
-use App\Models\Quote;
-use League\Csv\Reader;
-use App\Models\Company;
-use App\Models\Invoice;
-use League\Csv\Statement;
-use App\Factory\QuoteFactory;
 use App\Factory\ClientFactory;
-use Illuminate\Support\Carbon;
 use App\Factory\InvoiceFactory;
 use App\Factory\PaymentFactory;
+use App\Factory\QuoteFactory;
+use App\Factory\RecurringInvoiceFactory;
+use App\Factory\TaskFactory;
+use App\Http\Requests\Quote\StoreQuoteRequest;
 use App\Import\ImportException;
 use App\Jobs\Mail\NinjaMailerJob;
 use App\Jobs\Mail\NinjaMailerObject;
-use App\Utils\Traits\CleanLineItems;
-use App\Repositories\QuoteRepository;
-use Illuminate\Support\Facades\Cache;
-use App\Repositories\ClientRepository;
 use App\Mail\Import\CsvImportCompleted;
+use App\Models\Company;
+use App\Models\Invoice;
+use App\Models\Quote;
+use App\Models\User;
+use App\Repositories\ClientRepository;
 use App\Repositories\InvoiceRepository;
 use App\Repositories\PaymentRepository;
-use App\Factory\RecurringInvoiceFactory;
-use Illuminate\Support\Facades\Validator;
-use App\Http\Requests\Quote\StoreQuoteRequest;
+use App\Repositories\QuoteRepository;
 use App\Repositories\RecurringInvoiceRepository;
+use App\Repositories\TaskRepository;
+use App\Utils\Traits\CleanLineItems;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Validator;
+use League\Csv\Reader;
+use League\Csv\Statement;
 
 class BaseImport
 {
@@ -66,7 +68,7 @@ class BaseImport
     public ?bool $skip_header;
 
     public array $entity_count = [];
-    
+
     public function __construct(array $request, Company $company)
     {
         $this->company = $company;
@@ -138,6 +140,10 @@ class BaseImport
         $delimiters = [',', '.', ';', '|'];
         $bestDelimiter = ',';
         $count = 0;
+
+        // 10-01-2024 - A better way to resolve the csv file delimiter.
+        $csvfile = substr($csvfile, 0, strpos($csvfile, "\n"));
+
         foreach ($delimiters as $delimiter) {
 
             if (substr_count(strstr($csvfile, "\n", true), $delimiter) >= $count) {
@@ -146,7 +152,9 @@ class BaseImport
             }
 
         }
-        return $bestDelimiter;
+
+        /** @phpstan-ignore-next-line **/
+        return $bestDelimiter ?? ',';
     }
 
     public function mapCSVHeaderToKeys($csvData)
@@ -156,6 +164,32 @@ class BaseImport
         return array_map(function ($values) use ($keys) {
             return array_combine($keys, $values);
         }, $csvData);
+    }
+
+    private function groupTasks($csvData, $key)
+    {
+
+        if (! $key || !is_array($csvData) || count($csvData) == 0 || !isset($csvData[0]['task.number']) || empty($csvData[0]['task.number'])) {
+            return $csvData;
+        }
+
+        // Group by tasks.
+        $grouped = [];
+
+        foreach ($csvData as $item) {
+            if (empty($item[$key])) {
+                $this->error_array['task'][] = [
+                    'task' => $item,
+                    'error' => 'No task number',
+                ];
+            } else {
+                $grouped[$item[$key]][] = $item;
+            }
+        }
+
+        return $grouped;
+
+
     }
 
     private function groupInvoices($csvData, $key)
@@ -189,7 +223,7 @@ class BaseImport
 
     private function runValidation($data)
     {
-        $_syn_request_class = new $this->request_name;
+        $_syn_request_class = new $this->request_name();
         $_syn_request_class->setContainer(app());
         $_syn_request_class->initialize($data);
         $_syn_request_class->prepareForValidation();
@@ -218,7 +252,7 @@ class BaseImport
         }
 
         foreach ($data as $key => $record) {
-            
+
             unset($record['']);
 
             try {
@@ -262,7 +296,7 @@ class BaseImport
                     $entity_type => $record,
                     'error' => $message,
                 ];
-             
+
                 nlog("Ingest {$ex->getMessage()}");
                 nlog($record);
             }
@@ -386,7 +420,7 @@ class BaseImport
                     $count++;
                     // If we're doing a generic CSV import, only import payment data if we're not importing a payment CSV.
                     // If we're doing a platform-specific import, trust the platform to only return payment info if there's not a separate payment CSV.
-                    
+
 
                 }
             } catch (\Exception $ex) {
@@ -413,6 +447,65 @@ class BaseImport
         return $count;
     }
 
+    public function ingestTasks($tasks, $task_number_key)
+    {
+        $count = 0;
+
+        $task_transformer = $this->transformer;
+
+        $task_repository = new TaskRepository();
+
+        $tasks = $this->groupTasks($tasks, $task_number_key);
+
+        foreach ($tasks as $raw_task) {
+            $task_data = [];
+            try {
+                $task_data = $task_transformer->transform($raw_task);
+                $task_data['user_id'] = $this->company->owner()->id;
+
+                $validator = $this->request_name::runFormRequest($task_data);
+
+                if ($validator->fails()) {
+                    $this->error_array['task'][] = [
+                        'invoice' => $task_data,
+                        'error' => $validator->errors()->all(),
+                    ];
+                } else {
+                    $task = TaskFactory::create(
+                        $this->company->id,
+                        $this->company->owner()->id
+                    );
+
+                    $task_repository->save($task_data, $task);
+
+                    $count++;
+
+                }
+            } catch (\Exception $ex) {
+                if (\DB::connection(config('database.default'))->transactionLevel() > 0) {
+                    \DB::connection(config('database.default'))->rollBack();
+                }
+
+                if ($ex instanceof ImportException) {
+                    $message = $ex->getMessage();
+                } else {
+                    report($ex);
+                    $message = 'Unknown error ';
+                    nlog($ex->getMessage());
+                    nlog($task_data);
+                }
+
+                $this->error_array['task'][] = [
+                    'task' => $task_data,
+                    'error' => $message,
+                ];
+            }
+        }
+
+        return $count;
+    }
+
+
 
     public function ingestInvoices($invoices, $invoice_number_key)
     {
@@ -437,7 +530,7 @@ class BaseImport
             try {
                 $invoice_data = $invoice_transformer->transform($raw_invoice);
                 $invoice_data['user_id'] = $this->company->owner()->id;
-                
+
                 $invoice_data['line_items'] = $this->cleanItems(
                     $invoice_data['line_items'] ?? []
                 );
@@ -478,12 +571,13 @@ class BaseImport
                     if (! empty($invoice_data['status_id'])) {
                         $invoice->status_id = $invoice_data['status_id'];
                     }
-                    
+
                     nlog($invoice_data);
                     $saveable_invoice_data = $invoice_data;
-                    
-                    if(array_key_exists('payments', $saveable_invoice_data))
+
+                    if(array_key_exists('payments', $saveable_invoice_data)) {
                         unset($saveable_invoice_data['payments']);
+                    }
 
                     $invoice_repository->save($saveable_invoice_data, $invoice);
 
@@ -512,7 +606,7 @@ class BaseImport
 
                                 /* Make sure we don't apply any payments to invoices with a Zero Amount*/
                                 if ($invoice->amount > 0 && $payment_data['amount'] > 0) {
-                                    
+
                                     $payment = $payment_repository->save(
                                         $payment_data,
                                         PaymentFactory::create(
@@ -524,8 +618,7 @@ class BaseImport
 
                                     $payment_date = Carbon::parse($payment->date);
 
-                                    if(!$payment_date->isToday())
-                                    {
+                                    if(!$payment_date->isToday()) {
 
                                         $payment->paymentables()->update(['created_at' => $payment_date]);
 
@@ -694,7 +787,7 @@ class BaseImport
                         $quote->status_id = $quote_data['status_id'];
                     }
                     $quote_repository->save($quote_data, $quote);
-                    
+
                     $count++;
 
                     $this->actionQuoteStatus(
@@ -732,12 +825,22 @@ class BaseImport
 
     protected function findUser($user_hash)
     {
-        $user = User::where('account_id', $this->company->account->id)
-            ->where(
-                \DB::raw('CONCAT_WS(" ", first_name, last_name)'),
-                'like',
-                '%'.$user_hash.'%'
-            )
+        $user = false;
+
+        if(is_numeric($user_hash)) {
+
+            $user = User::query()
+                        ->where('account_id', $this->company->account->id)
+                        ->where('id', $user_hash)
+                        ->first();
+
+        }
+
+        if($user) {
+            return $user->id;
+        }
+
+        $user = User::whereRaw("account_id = ? AND CONCAT_WS(' ', first_name, last_name) like ?", [$this->company->account_id, '%'.$user_hash.'%'])
             ->first();
 
         if ($user) {
@@ -755,7 +858,7 @@ class BaseImport
             'entity_count' => $this->entity_count
         ];
 
-        $nmo = new NinjaMailerObject;
+        $nmo = new NinjaMailerObject();
         $nmo->mailable = new CsvImportCompleted($this->company, $data);
         $nmo->company = $this->company;
         $nmo->settings = $this->company->settings;
@@ -791,7 +894,7 @@ class BaseImport
         $data = array_map(function ($row) use ($keys) {
             $row_count = count($row);
             $key_count = count($keys);
-            
+
             if ($key_count > $row_count) {
                 $row = array_pad($row, $key_count, ' ');
             }

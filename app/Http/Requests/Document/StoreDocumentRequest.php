@@ -21,12 +21,12 @@ class StoreDocumentRequest extends Request
      *
      * @return bool
      */
-    public function authorize() : bool
+    public function authorize(): bool
     {
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
-        return $user->can('create', Document::class);
+        return $user->can('create', Document::class) || ($user->hasIntersectPermissions(['edit_all', 'create_all']));
     }
 
     public function rules()
@@ -40,8 +40,9 @@ class StoreDocumentRequest extends Request
     {
         $input = $this->all();
 
-        if(isset($input['is_public'])) 
+        if(isset($input['is_public'])) {
             $input['is_public'] = $this->toBoolean($input['is_public']);
+        }
 
         $this->replace($input);
     }

@@ -9,12 +9,11 @@
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
-
 namespace App\Exceptions;
 
 use Exception;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class PaymentRefundFailed extends Exception
 {

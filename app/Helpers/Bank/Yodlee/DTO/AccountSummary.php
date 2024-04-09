@@ -11,10 +11,9 @@
 
 namespace App\Helpers\Bank\Yodlee\DTO;
 
-use Spatie\LaravelData\Data;
-use Spatie\LaravelData\Attributes\MapInputName;
-use Spatie\LaravelData\Attributes\MapOutputName;
 use Illuminate\Support\Collection;
+use Spatie\LaravelData\Attributes\MapInputName;
+use Spatie\LaravelData\Data;
 
 /**
  * [
@@ -72,40 +71,40 @@ use Illuminate\Support\Collection;
  */
 class AccountSummary extends Data
 {
-        public ?int $id;
+    public ?int $id;
 
-        #[MapInputName('CONTAINER')]
-        public ?string $account_type = ''; 
-        
-        #[MapInputName('accountName')]
-        public ?string $account_name = ''; 
+    #[MapInputName('CONTAINER')]
+    public ?string $account_type = '';
 
-        #[MapInputName('accountStatus')]
-        public ?string $account_status = ''; 
+    #[MapInputName('accountName')]
+    public ?string $account_name = '';
 
-        #[MapInputName('accountNumber')]
-        public ?string $account_number = '';
+    #[MapInputName('accountStatus')]
+    public ?string $account_status = '';
 
-        #[MapInputName('providerAccountId')]
-        public int $provider_account_id; 
+    #[MapInputName('accountNumber')]
+    public ?string $account_number = '';
 
-        #[MapInputName('providerId')]
-        public ?string $provider_id = '';
+    #[MapInputName('providerAccountId')]
+    public int $provider_account_id;
 
-        #[MapInputName('providerName')]
-        public ?string $provider_name = ''; 
+    #[MapInputName('providerId')]
+    public ?string $provider_id = '';
 
-        public ?string $nickname = ''; 
-        
-        public ?float $current_balance = 0;         
-        public ?string $account_currency = '';
+    #[MapInputName('providerName')]
+    public ?string $provider_name = '';
 
-        public static function prepareForPipeline(Collection $properties) : Collection
-        {
-            
-            $properties->put('current_balance', $properties['currentBalance']['amount'] ?? 0);
-            $properties->put('account_currency', $properties['currentBalance']['currency'] ?? 0);
+    public ?string $nickname = '';
 
-            return $properties;
-        }
+    public ?float $current_balance = 0;
+    public ?string $account_currency = '';
+
+    public static function prepareForPipeline(Collection $properties): Collection
+    {
+
+        $properties->put('current_balance', $properties['currentBalance']['amount'] ?? 0);
+        $properties->put('account_currency', $properties['currentBalance']['currency'] ?? 0);
+
+        return $properties;
+    }
 }

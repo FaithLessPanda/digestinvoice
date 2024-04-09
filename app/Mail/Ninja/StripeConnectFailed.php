@@ -11,16 +11,15 @@
 
 namespace App\Mail\Ninja;
 
-use App\Models\User;
 use App\Models\Company;
+use App\Models\User;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
-use Illuminate\Mail\Mailables\Headers;
 use Illuminate\Mail\Mailables\Envelope;
+use Illuminate\Mail\Mailables\Headers;
 
 class StripeConnectFailed extends Mailable
 {
-
     /**
      * Create a new message instance.
      *
@@ -39,7 +38,7 @@ class StripeConnectFailed extends Mailable
     {
         return new Envelope(
             subject: "Stripe Connect not configured, please login and connect.",
-            from: "maildelivery@invoicing.co",
+            from: config('ninja.contact.email'),
             to: $this->user->email,
         );
     }
@@ -51,7 +50,7 @@ class StripeConnectFailed extends Mailable
      */
     public function content()
     {
-        
+
         return new Content(
             view: 'email.admin.stripe_connect_failed',
             text: 'email.admin.stripe_connect_failed_text',
@@ -97,7 +96,7 @@ class StripeConnectFailed extends Mailable
     {
         return [];
     }
- 
+
     /**
      * Get the message headers.
      *

@@ -57,8 +57,8 @@ use App\Models\VendorContact;
 use App\Utils\Traits\GeneratesCounter;
 use App\Utils\Traits\MakesHash;
 use App\Utils\TruthSource;
-use Illuminate\Foundation\Testing\WithoutEvents;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
@@ -71,7 +71,6 @@ trait MockAccountData
 {
     use MakesHash;
     use GeneratesCounter;
-    use WithoutEvents;
 
     /**
      * @var
@@ -184,6 +183,11 @@ trait MockAccountData
      */
     public $scheduler;
 
+    /**
+     * @var
+     */
+    public $purchase_order;
+
     public $contact;
     
     public $product;
@@ -197,7 +201,9 @@ trait MockAccountData
         /* Warm up the cache !*/
         $cached_tables = config('ninja.cached_tables');
 
-        $this->artisan('db:seed --force');
+        Artisan::call('db:seed', [
+        '--force' => true
+        ]);
 
         foreach ($cached_tables as $name => $class) {
             // check that the table exists in case the migration is pending
@@ -263,6 +269,9 @@ trait MockAccountData
         $this->company->save();
 
         $this->account->default_company_id = $this->company->id;
+        $this->account->plan = 'pro';
+        $this->account->plan_expires = now()->addMonth();
+        $this->account->plan_term = "month";
         $this->account->save();
 
         $user = User::whereEmail($fake_email)->first();
@@ -574,6 +583,8 @@ trait MockAccountData
         $this->purchase_order->tax_rate2 = 0;
         $this->purchase_order->tax_rate3 = 0;
 
+        $this->purchase_order->line_items = InvoiceItemFactory::generate(5);
+
         $this->purchase_order->uses_inclusive_taxes = false;
         $this->purchase_order->save();
 
@@ -719,7 +730,6 @@ trait MockAccountData
         $this->invoice->save();
 
         $this->invoice->ledger()->updateInvoiceBalance($this->invoice->amount);
-        // UpdateCompanyLedgerWithInvoice::dispatchNow($this->invoice, $this->invoice->amount, $this->invoice->company);
 
         $user_id = $this->invoice->user_id;
 

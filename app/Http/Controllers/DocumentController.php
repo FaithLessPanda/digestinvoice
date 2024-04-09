@@ -145,7 +145,7 @@ class DocumentController extends BaseController
      * @return Response
      */
     public function update(UpdateDocumentRequest $request, Document $document)
-    {   
+    {
         $document->fill($request->all());
         $document->save();
 
@@ -163,7 +163,7 @@ class DocumentController extends BaseController
     {
         $this->document_repo->delete($document);
 
-        return response()->json(['message'=> ctrans('texts.success')]);
+        return response()->json(['message' => ctrans('texts.success')]);
     }
 
     public function bulk()

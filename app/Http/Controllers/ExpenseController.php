@@ -15,6 +15,7 @@ use App\Events\Expense\ExpenseWasCreated;
 use App\Events\Expense\ExpenseWasUpdated;
 use App\Factory\ExpenseFactory;
 use App\Filters\ExpenseFilters;
+use App\Http\Requests\Expense\BulkExpenseRequest;
 use App\Http\Requests\Expense\CreateExpenseRequest;
 use App\Http\Requests\Expense\DestroyExpenseRequest;
 use App\Http\Requests\Expense\EditExpenseRequest;
@@ -321,7 +322,10 @@ class ExpenseController extends BaseController
      */
     public function create(CreateExpenseRequest $request)
     {
-        $expense = ExpenseFactory::create(auth()->user()->company()->id, auth()->user()->id);
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
+
+        $expense = ExpenseFactory::create($user->company()->id, $user->id);
 
         return $this->itemResponse($expense);
     }
@@ -366,9 +370,12 @@ class ExpenseController extends BaseController
      */
     public function store(StoreExpenseRequest $request)
     {
-        $expense = $this->expense_repo->save($request->all(), ExpenseFactory::create(auth()->user()->company()->id, auth()->user()->id));
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
 
-        event(new ExpenseWasCreated($expense, $expense->company, Ninja::eventVars(auth()->user() ? auth()->user()->id : null)));
+        $expense = $this->expense_repo->save($request->all(), ExpenseFactory::create($user->company()->id, $user->id));
+
+        event(new ExpenseWasCreated($expense, $expense->company, Ninja::eventVars($user ? $user->id : null)));
 
         event('eloquent.created: App\Models\Expense', $expense);
 
@@ -481,20 +488,25 @@ class ExpenseController extends BaseController
      *       ),
      *     )
      */
-    public function bulk()
+    public function bulk(BulkExpenseRequest $request)
     {
-        $action = request()->input('action');
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
 
-        $ids = request()->input('ids');
-        $expenses = Expense::withTrashed()->find($this->transformKeys($ids));
+        $expenses = Expense::withTrashed()->find($request->ids);
 
-        $expenses->each(function ($expense, $key) use ($action) {
-            if (auth()->user()->can('edit', $expense)) {
-                $this->expense_repo->{$action}($expense);
+        if($request->action == 'bulk_categorize' && $user->can('edit', $expenses->first())) {
+            $this->expense_repo->categorize($expenses, $request->category_id);
+            $expenses = collect([]);
+        }
+
+        $expenses->each(function ($expense) use ($request, $user) {
+            if ($user->can('edit', $expense)) {
+                $this->expense_repo->{$request->action}($expense);
             }
         });
 
-        return $this->listResponse(Expense::withTrashed()->whereIn('id', $this->transformKeys($ids)));
+        return $this->listResponse(Expense::withTrashed()->whereIn('id', $request->ids));
     }
 
     /**

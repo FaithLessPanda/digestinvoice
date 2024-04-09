@@ -79,7 +79,7 @@ class Gateway extends StaticModel
      * Test if gateway is custom.
      * @return bool TRUE|FALSE
      */
-    public function isCustom() :bool
+    public function isCustom(): bool
     {
         return in_array($this->id, [62, 67, 68]); //static table ids of the custom gateways
     }
@@ -90,7 +90,7 @@ class Gateway extends StaticModel
 
         if ($this->id == 1) {
             $link = 'http://reseller.authorize.net/application/?id=5560364';
-        } elseif ($this->id == 15) {
+        } elseif (in_array($this->id, [15,60,61])) {
             $link = 'https://www.paypal.com/us/cgi-bin/webscr?cmd=_login-api-run';
         } elseif ($this->id == 24) {
             $link = 'https://www.2checkout.com/referral?r=2c37ac2298';
@@ -175,10 +175,10 @@ class Gateway extends StaticModel
                 ];
             case 52:
                 return [
-                    GatewayType::BANK_TRANSFER => ['refund' => false, 'token_billing' => true, 'webhooks' => [' ']], // GoCardless
-                    GatewayType::DIRECT_DEBIT => ['refund' => false, 'token_billing' => true, 'webhooks' => [' ']],
-                    GatewayType::SEPA => ['refund' => false, 'token_billing' => true, 'webhooks' => [' ']],
-                    GatewayType::INSTANT_BANK_PAY => ['refund' => false, 'token_billing' => true, 'webhooks' => [' ']],
+                    GatewayType::BANK_TRANSFER => ['refund' => false, 'token_billing' => true, 'webhooks' => ['confirmed','paid_out','failed','fulfilled']], // GoCardless
+                    GatewayType::DIRECT_DEBIT => ['refund' => false, 'token_billing' => true, 'webhooks' => ['confirmed','paid_out','failed','fulfilled']],
+                    GatewayType::SEPA => ['refund' => false, 'token_billing' => true, 'webhooks' => ['confirmed','paid_out','failed','fulfilled']],
+                    GatewayType::INSTANT_BANK_PAY => ['refund' => false, 'token_billing' => true, 'webhooks' => ['confirmed','paid_out','failed','fulfilled']],
                 ];
             case 58:
                 return [
@@ -202,7 +202,19 @@ class Gateway extends StaticModel
                     // GatewayType::PRZELEWY24 => ['refund' => false, 'token_billing' => false],
                     // GatewayType::SOFORT => ['refund' => false, 'token_billing' => false],
                 ]; //Paypal
-
+            case 61:
+                return [
+                    GatewayType::PAYPAL => ['refund' => false, 'token_billing' => false],
+                    GatewayType::CREDIT_CARD => ['refund' => false, 'token_billing' => false],
+                    GatewayType::VENMO => ['refund' => false, 'token_billing' => false],
+                    // GatewayType::SEPA => ['refund' => false, 'token_billing' => false],
+                    // GatewayType::BANCONTACT => ['refund' => false, 'token_billing' => false],
+                    // GatewayType::EPS => ['refund' => false, 'token_billing' => false],
+                    // GatewayType::MYBANK => ['refund' => false, 'token_billing' => false],
+                    GatewayType::PAYLATER => ['refund' => false, 'token_billing' => false],
+                    // GatewayType::PRZELEWY24 => ['refund' => false, 'token_billing' => false],
+                    // GatewayType::SOFORT => ['refund' => false, 'token_billing' => false],
+                ]; //Paypal PPCP
             default:
                 return [];
         }

@@ -11,7 +11,6 @@
 
 namespace App\Models;
 
-use App\Helpers\Document\WithTypeHelpers;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Storage;
 
@@ -64,9 +63,8 @@ class Document extends BaseModel
 {
     use SoftDeletes;
     use Filterable;
-    use WithTypeHelpers;
 
-    const DOCUMENT_PREVIEW_SIZE = 300; // pixels
+    public const DOCUMENT_PREVIEW_SIZE = 300; // pixels
 
     /**
      * @var array<string>
@@ -178,7 +176,11 @@ class Document extends BaseModel
 
     public function generateRoute($absolute = false)
     {
+        try{
         return route('api.documents.show', ['document' => $this->hashed_id]).'/download';
+        }catch(\Exception $e){
+            return '';
+        }
     }
 
     public function deleteFile()
@@ -205,4 +207,47 @@ class Document extends BaseModel
     {
         return ctrans('texts.document');
     }
+
+    public function compress(): mixed
+    {
+
+        $image = $this->getFile();
+        $catch_image = $image;
+
+        if(!extension_loaded('imagick')) {
+            return $catch_image;
+        }
+
+        try {
+            $file = base64_encode($image);
+
+            $img = new \Imagick();
+            $img->readImageBlob($file);
+            $img->setImageCompression(true);
+            $img->setImageCompressionQuality(40);
+
+            return $img->getImageBlob();
+
+        } catch(\Exception $e) {
+
+            nlog($e->getMessage());
+            return $catch_image;
+        }
+
+    }
+
+    /**
+     * Returns boolean based on checks for image.
+     *
+     * @return bool
+     */
+    public function isImage(): bool
+    {
+        if (in_array($this->type, ['png', 'jpeg', 'jpg', 'tiff', 'gif'])) {
+            return true;
+        }
+
+        return false;
+    }
+
 }

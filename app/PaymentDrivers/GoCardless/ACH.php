@@ -119,7 +119,7 @@ class ACH implements MethodInterface
                 ]],
             );
 
-            $payment_meta = new \stdClass;
+            $payment_meta = new \stdClass();
             $payment_meta->brand = ctrans('texts.ach');
             $payment_meta->type = GatewayType::BANK_TRANSFER;
             $payment_meta->state = 'authorized';
@@ -142,7 +142,7 @@ class ACH implements MethodInterface
      * Show the payment page for ACH.
      *
      * @param array $data
-     * @return \Illuminate\View\View         
+     * @return \Illuminate\View\View
      */
     public function paymentView(array $data): View
     {

@@ -80,6 +80,7 @@ class ContactForgotPasswordController extends Controller
             'passwordEmailRoute' => 'client.password.email',
             'account' => $account,
             'company' => $company,
+            'is_react' => false,
         ]);
     }
 
@@ -101,7 +102,7 @@ class ContactForgotPasswordController extends Controller
 
         $this->validateEmail($request);
 
-        
+
         if (Ninja::isHosted() && $company = Company::where('company_key', $request->input('company_key'))->first()) {
             /** @var \App\Models\Company $company **/
 

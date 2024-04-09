@@ -159,7 +159,7 @@ trait DesignHelpers
         if ($type == 'task') {
             $type_id = 2;
         }
-        
+
         /** 17-05-2023 need to explicity define product_quote here */
         if ($type == 'product_quote') {
             $type_id = 1;
@@ -241,12 +241,13 @@ trait DesignHelpers
     {
         // We want to show headers for statements, no exceptions.
         $statements = "
-            document.querySelectorAll('#statement-invoice-table > thead > tr > th, #statement-payment-table > thead > tr > th, #statement-aging-table > thead > tr > th').forEach(t => {
+            document.querySelectorAll('#statement-credit-table > thead > tr > th, #statement-invoice-table > thead > tr > th, #statement-payment-table > thead > tr > th, #statement-aging-table > thead > tr > th').forEach(t => {
                 t.hidden = false;
             });
         ";
 
-        $javascript = 'document.addEventListener("DOMContentLoaded",function(){document.querySelectorAll("#product-table > tbody > tr > td, #task-table > tbody > tr > td, #delivery-note-table > tbody > tr > td").forEach(t=>{if(""!==t.innerText){let e=t.getAttribute("data-ref").slice(0,-3);document.querySelector(`th[data-ref="${e}-th"]`).removeAttribute("hidden")}}),document.querySelectorAll("#product-table > tbody > tr > td, #task-table > tbody > tr > td, #delivery-note-table > tbody > tr > td").forEach(t=>{let e=t.getAttribute("data-ref").slice(0,-3);(e=document.querySelector(`th[data-ref="${e}-th"]`)).hasAttribute("hidden")&&""==t.innerText&&t.setAttribute("hidden","true")})},!1);';
+        // $javascript = 'document.addEventListener("DOMContentLoaded",function(){document.querySelectorAll("#product-table > tbody > tr > td, #task-table > tbody > tr > td, #delivery-note-table > tbody > tr > td").forEach(t=>{if(""!==t.innerText){let e=t.getAttribute("data-ref").slice(0,-3);document.querySelector(`th[data-ref="${e}-th"]`).removeAttribute("hidden")}}),document.querySelectorAll("#product-table > tbody > tr > td, #task-table > tbody > tr > td, #delivery-note-table > tbody > tr > td").forEach(t=>{let e=t.getAttribute("data-ref").slice(0,-3);(e=document.querySelector(`th[data-ref="${e}-th"]`)).hasAttribute("hidden")&&""==t.innerText&&t.setAttribute("hidden","true")})},!1);';
+        $javascript = 'document.addEventListener("DOMContentLoaded",function(){document.querySelectorAll("#custom-table > tbody > tr >td, #product-table > tbody > tr > td, #task-table > tbody > tr > td, #delivery-note-table > tbody > tr > td").forEach(t=>{if(""!==t.innerText){let e=t.getAttribute("data-ref").slice(0,-3);document.querySelector(`th[data-ref="${e}-th"]`).removeAttribute("hidden")}}),document.querySelectorAll("#custom-table > tbody > tr > td, #product-table > tbody > tr > td, #task-table > tbody > tr > td, #delivery-note-table > tbody > tr > td").forEach(t=>{let e=t.getAttribute("data-ref").slice(0,-3);(e=document.querySelector(`th[data-ref="${e}-th"]`)).hasAttribute("hidden")&&""==t.innerText&&t.setAttribute("hidden","true")})},!1);';
 
         // Previously we've been decoding the HTML on the backend and XML parsing isn't good options because it requires,
         // strict & valid HTML to even output/decode. Decoding is now done on the frontend with this piece of Javascript.
@@ -392,7 +393,7 @@ trait DesignHelpers
 
         $value = $this->client->company->getSetting($fields[$field]);
 
-        return (new \App\Utils\Helpers)->formatCustomFieldValue(
+        return (new \App\Utils\Helpers())->formatCustomFieldValue(
             $this->client->company->custom_fields,
             $field,
             $value,
@@ -400,6 +401,10 @@ trait DesignHelpers
         );
     }
 
+    /**
+     * @todo - this is being called directl, - not through the calling class!!!!
+     * @design_flaw
+     */
     public static function parseMarkdownToHtml(string $markdown): ?string
     {
         // Use setting to determinate if parsing should be done.

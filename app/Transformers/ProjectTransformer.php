@@ -25,14 +25,14 @@ class ProjectTransformer extends EntityTransformer
 {
     use MakesHash;
 
-    protected $defaultIncludes = [
+    protected array $defaultIncludes = [
         'documents',
     ];
 
     /**
      * @var array
      */
-    protected $availableIncludes = [
+    protected array $availableIncludes = [
         'client',
         'tasks',
     ];
@@ -41,7 +41,10 @@ class ProjectTransformer extends EntityTransformer
     {
         $transformer = new DocumentTransformer($this->serializer);
 
-        return $this->includeCollection($project->documents, $transformer, Document::class);
+        if($project->documents)
+            return $this->includeCollection($project->documents, $transformer, Document::class);
+    
+        return null;
     }
 
     public function includeClient(Project $project): \League\Fractal\Resource\Item

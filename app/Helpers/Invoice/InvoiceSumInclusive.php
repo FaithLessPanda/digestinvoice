@@ -11,15 +11,14 @@
 
 namespace App\Helpers\Invoice;
 
-use App\Models\Quote;
 use App\Models\Credit;
 use App\Models\Invoice;
 use App\Models\PurchaseOrder;
-use App\Models\RecurringQuote;
+use App\Models\Quote;
 use App\Models\RecurringInvoice;
-use Illuminate\Support\Collection;
+use App\Models\RecurringQuote;
 use App\Utils\Traits\NumberFormatter;
-use App\Helpers\Invoice\InvoiceItemSumInclusive;
+use Illuminate\Support\Collection;
 
 class InvoiceSumInclusive
 {
@@ -64,7 +63,7 @@ class InvoiceSumInclusive
             $this->precision = $this->invoice->vendor->currency()->precision;
         }
 
-        $this->tax_map = new Collection;
+        $this->tax_map = new Collection();
     }
 
     public function build()
@@ -123,7 +122,7 @@ class InvoiceSumInclusive
     private function calculateInvoiceTaxes()
     {
         $amount = $this->total;
-
+       
         if ($this->invoice->discount > 0 && $this->invoice->is_amount_discount) {
             $amount = $this->formatValue(($this->sub_total - $this->invoice->discount), 2);
         }
@@ -132,20 +131,20 @@ class InvoiceSumInclusive
             $amount = $this->formatValue(($this->sub_total - ($this->sub_total * ($this->invoice->discount / 100))), 2);
         }
 
-        if ($this->invoice->tax_rate1 > 0) {
+        if (is_string($this->invoice->tax_name1) && strlen($this->invoice->tax_name1) > 1) {
             $tax = $this->calcInclusiveLineTax($this->invoice->tax_rate1, $amount);
             $this->total_taxes += $tax;
 
             $this->total_tax_map[] = ['name' => $this->invoice->tax_name1.' '.floatval($this->invoice->tax_rate1).'%', 'total' => $tax];
         }
 
-        if ($this->invoice->tax_rate2 > 0) {
+        if (is_string($this->invoice->tax_name2) && strlen($this->invoice->tax_name2) > 1) {
             $tax = $this->calcInclusiveLineTax($this->invoice->tax_rate2, $amount);
             $this->total_taxes += $tax;
             $this->total_tax_map[] = ['name' => $this->invoice->tax_name2.' '.floatval($this->invoice->tax_rate2).'%', 'total' => $tax];
         }
 
-        if ($this->invoice->tax_rate3 > 0) {
+        if (is_string($this->invoice->tax_name3) && strlen($this->invoice->tax_name3) > 1) {
             $tax = $this->calcInclusiveLineTax($this->invoice->tax_rate3, $amount);
             $this->total_taxes += $tax;
             $this->total_tax_map[] = ['name' => $this->invoice->tax_name3.' '.floatval($this->invoice->tax_rate3).'%', 'total' => $tax];
@@ -260,9 +259,9 @@ class InvoiceSumInclusive
         /* If amount != balance then some money has been paid on the invoice, need to subtract this difference from the total to set the new balance */
         if ($this->invoice->status_id != Invoice::STATUS_DRAFT) {
             if ($this->invoice->amount != $this->invoice->balance) {
-                $paid_to_date = $this->invoice->amount - $this->invoice->balance;
+                // $paid_to_date = $this->invoice->amount - $this->invoice->balance;
 
-                $this->invoice->balance = $this->formatValue($this->getTotal(), $this->precision) - $paid_to_date;
+                $this->invoice->balance = $this->formatValue($this->getTotal(), $this->precision) - $this->invoice->paid_to_date;
             } else {
                 $this->invoice->balance = $this->formatValue($this->getTotal(), $this->precision);
             }
@@ -315,8 +314,9 @@ class InvoiceSumInclusive
 
     public function setTaxMap()
     {
-        if ($this->invoice->is_amount_discount == true) {
+        if ($this->invoice->is_amount_discount) {
             $this->invoice_items->calcTaxesWithAmountDiscount();
+            $this->invoice->line_items = $this->invoice_items->getLineItems();
         }
 
         $this->tax_map = collect();
@@ -340,7 +340,8 @@ class InvoiceSumInclusive
 
             $this->total_taxes += $total_line_tax;
         }
-
+nlog($this->tax_map);
+nlog($this->total_taxes);
         return $this;
     }
 

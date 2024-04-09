@@ -13,6 +13,7 @@ namespace App\Models;
 
 use App\DataMapper\CompanySettings;
 use App\Models\Presenters\VendorPresenter;
+use App\Services\Vendor\VendorService;
 use App\Utils\Traits\AppSetup;
 use App\Utils\Traits\GeneratesCounter;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -113,6 +114,7 @@ class Vendor extends BaseModel
         'custom_value4',
         'number',
         'language_id',
+        'classification',
     ];
 
     protected $casts = [
@@ -203,7 +205,7 @@ class Vendor extends BaseModel
         return ctrans('texts.vendor');
     }
 
-    public function setCompanyDefaults($data, $entity_name) :array
+    public function setCompanyDefaults($data, $entity_name): array
     {
         $defaults = [];
 
@@ -243,7 +245,7 @@ class Vendor extends BaseModel
         return '';
     }
 
-    public function getMergedSettings() :object
+    public function getMergedSettings(): object
     {
         return $this->company->settings;
     }
@@ -273,5 +275,15 @@ class Vendor extends BaseModel
     public function date_format(): string
     {
         return $this->company->date_format();
+    }
+
+    public function backup_path(): string
+    {
+        return $this->company->company_key.'/'.$this->vendor_hash.'/backups';
+    }
+
+    public function service()
+    {
+        return new VendorService($this);
     }
 }

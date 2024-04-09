@@ -118,7 +118,7 @@ class SEPA implements MethodInterface
                 ]],
             );
 
-            $payment_meta = new \stdClass;
+            $payment_meta = new \stdClass();
             $payment_meta->brand = ctrans('texts.sepa');
             $payment_meta->type = GatewayType::SEPA;
             $payment_meta->state = 'authorized';
@@ -141,7 +141,7 @@ class SEPA implements MethodInterface
      * Payment view for SEPA.
      *
      * @param array $data
-     * @return \Illuminate\View\View         
+     * @return \Illuminate\View\View
      */
     public function paymentView(array $data): View
     {

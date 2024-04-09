@@ -11,7 +11,6 @@
 
 namespace App\Http\Middleware;
 
-
 use Closure;
 use Illuminate\Routing\Exceptions\InvalidSignatureException;
 
@@ -44,6 +43,6 @@ class ValidateSignature
             return $next($request);
         }
 
-        throw new InvalidSignatureException;
+        throw new InvalidSignatureException();
     }
 }

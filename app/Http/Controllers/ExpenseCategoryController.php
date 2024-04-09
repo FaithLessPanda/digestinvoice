@@ -24,7 +24,6 @@ use App\Models\ExpenseCategory;
 use App\Repositories\BaseRepository;
 use App\Transformers\ExpenseCategoryTransformer;
 use App\Utils\Traits\MakesHash;
-use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
 /**
@@ -129,7 +128,11 @@ class ExpenseCategoryController extends BaseController
      */
     public function create(CreateExpenseCategoryRequest $request)
     {
-        $expense_category = ExpenseCategoryFactory::create(auth()->user()->company()->id, auth()->user()->id);
+
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
+
+        $expense_category = ExpenseCategoryFactory::create($user->company()->id, auth()->user()->id);
 
         return $this->itemResponse($expense_category);
     }
@@ -138,7 +141,7 @@ class ExpenseCategoryController extends BaseController
     /**
      * Store a newly created resource in storage.
      *
-     * @param StoreExpenseCategoryRequest $request  
+     * @param StoreExpenseCategoryRequest $request
      * @return Response
      *
      *

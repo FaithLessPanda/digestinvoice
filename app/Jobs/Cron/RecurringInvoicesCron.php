@@ -11,13 +11,13 @@
 
 namespace App\Jobs\Cron;
 
-use App\Models\Invoice;
-use App\Libraries\MultiDB;
-use Illuminate\Support\Carbon;
-use App\Models\RecurringInvoice;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Foundation\Bus\Dispatchable;
 use App\Jobs\RecurringInvoice\SendRecurring;
+use App\Libraries\MultiDB;
+use App\Models\Invoice;
+use App\Models\RecurringInvoice;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
 
 class RecurringInvoicesCron
 {
@@ -39,16 +39,16 @@ class RecurringInvoicesCron
      *
      * @return void
      */
-    public function handle() : void
+    public function handle(): void
     {
         /* Get all invoices where the send date is less than NOW + 30 minutes() */
         $start = Carbon::now()->format('Y-m-d h:i:s');
         nlog('Sending recurring invoices '.$start);
-        
+
         Auth::logout();
 
         if (! config('ninja.db.multi_db_enabled')) {
-            $recurring_invoices = RecurringInvoice::where('status_id', RecurringInvoice::STATUS_ACTIVE)
+            $recurring_invoices = RecurringInvoice::query()->where('status_id', RecurringInvoice::STATUS_ACTIVE)
                                                         ->where('is_deleted', false)
                                                         ->where('remaining_cycles', '!=', '0')
                                                         ->whereNotNull('next_send_date')
@@ -87,7 +87,7 @@ class RecurringInvoicesCron
             foreach (MultiDB::$dbs as $db) {
                 MultiDB::setDB($db);
 
-                $recurring_invoices = RecurringInvoice::where('status_id', RecurringInvoice::STATUS_ACTIVE)
+                $recurring_invoices = RecurringInvoice::query()->where('status_id', RecurringInvoice::STATUS_ACTIVE)
                                                         ->where('is_deleted', false)
                                                         ->where('remaining_cycles', '!=', '0')
                                                         ->whereNull('deleted_at')

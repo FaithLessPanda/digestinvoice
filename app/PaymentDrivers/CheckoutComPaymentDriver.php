@@ -5,44 +5,45 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\PaymentDrivers;
 
-use App\Exceptions\PaymentFailed;
-use App\Http\Requests\ClientPortal\Payments\PaymentResponseRequest;
-use App\Http\Requests\Gateways\Checkout3ds\Checkout3dsRequest;
-use App\Http\Requests\Payments\PaymentWebhookRequest;
-use App\Jobs\Util\SystemLogger;
-use App\Models\ClientGatewayToken;
+use Exception;
 use App\Models\Company;
-use App\Models\GatewayType;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\SystemLog;
+use Checkout\CheckoutSdk;
+use Checkout\Environment;
+use Checkout\Common\Phone;
+use App\Models\GatewayType;
 use App\Models\PaymentHash;
 use App\Models\PaymentType;
-use App\Models\SystemLog;
-use App\PaymentDrivers\CheckoutCom\CheckoutWebhook;
-use App\PaymentDrivers\CheckoutCom\CreditCard;
-use App\PaymentDrivers\CheckoutCom\Utilities;
-use App\Utils\Traits\SystemLogTrait;
+use Illuminate\Support\Carbon;
+use App\Jobs\Util\SystemLogger;
+use App\Exceptions\PaymentFailed;
+use App\Models\ClientGatewayToken;
 use Checkout\CheckoutApiException;
+use App\Utils\Traits\SystemLogTrait;
+use Checkout\Payments\RefundRequest;
+use Illuminate\Support\Facades\Auth;
 use Checkout\CheckoutArgumentException;
-use Checkout\CheckoutAuthorizationException;
-use Checkout\CheckoutSdk;
-use Checkout\Common\Phone;
 use Checkout\Customers\CustomerRequest;
-use Checkout\Environment;
+use Checkout\CheckoutAuthorizationException;
+use App\PaymentDrivers\CheckoutCom\Utilities;
+use Checkout\Payments\Request\PaymentRequest;
+use App\PaymentDrivers\CheckoutCom\CreditCard;
+use App\PaymentDrivers\CheckoutCom\CheckoutWebhook;
+use App\Http\Requests\Payments\PaymentWebhookRequest;
+use Checkout\Payments\Request\Source\RequestIdSource;
+use App\Http\Requests\Gateways\Checkout3ds\Checkout3dsRequest;
+use App\Http\Requests\ClientPortal\Payments\PaymentResponseRequest;
 use Checkout\Payments\Previous\PaymentRequest as PreviousPaymentRequest;
 use Checkout\Payments\Previous\Source\RequestIdSource as SourceRequestIdSource;
-use Checkout\Payments\RefundRequest;
-use Checkout\Payments\Request\PaymentRequest;
-use Checkout\Payments\Request\Source\RequestIdSource;
-use Exception;
-use Illuminate\Support\Facades\Auth;
 
 class CheckoutComPaymentDriver extends BaseDriver
 {
@@ -214,7 +215,7 @@ class CheckoutComPaymentDriver extends BaseDriver
     {
         $this->init();
 
-        if($this->company_gateway->update_details) {
+        if ($this->company_gateway->update_details) {
             $this->updateCustomer();
         }
 
@@ -333,7 +334,7 @@ class CheckoutComPaymentDriver extends BaseDriver
     public function updateCustomer($customer_id = null)
     {
 
-        if(!$customer_id) {
+        if (!$customer_id) {
             return;
         }
 
@@ -405,14 +406,16 @@ class CheckoutComPaymentDriver extends BaseDriver
             $response = $this->gateway->getPaymentsClient()->requestPayment($paymentRequest);
 
             if ($response['status'] == 'Authorized') {
-                $this->confirmGatewayFee($request);
 
                 $data = [
                     'payment_method' => $response['source']['id'],
                     'payment_type' => PaymentType::parseCardType(strtolower($response['source']['scheme'])),
                     'amount' => $amount,
                     'transaction_reference' => $response['id'],
+                    'gateway_type_id' => GatewayType::CREDIT_CARD,
                 ];
+
+                $this->confirmGatewayFee($data);
 
                 $payment = $this->createPayment($data, Payment::STATUS_COMPLETED);
 
@@ -488,7 +491,7 @@ class CheckoutComPaymentDriver extends BaseDriver
         header('Content-Type: text/plain');
         $webhook_payload = file_get_contents('php://input');
 
-        if($request->header('cko-signature') == hash_hmac('sha256', $webhook_payload, $this->company_gateway->company->company_key)) {
+        if ($request->header('cko-signature') == hash_hmac('sha256', $webhook_payload, $this->company_gateway->company->company_key)) {
             CheckoutWebhook::dispatch($request->all(), $request->company_key, $this->company_gateway->id)->delay(10);
         } else {
             nlog("Hash Mismatch = {$request->header('cko-signature')} ".hash_hmac('sha256', $webhook_payload, $this->company_gateway->company->company_key));
@@ -533,5 +536,92 @@ class CheckoutComPaymentDriver extends BaseDriver
     public function detach(ClientGatewayToken $clientGatewayToken)
     {
         // Gateway doesn't support this feature.
+    }
+
+    public function auth(): bool
+    {
+        try {
+            $this->init()->gateway->getCustomersClient('x');
+            return true;
+        } catch (\Exception $e) {
+
+        }
+        return false;
+    }
+
+    private function getToken(string $token, $gateway_customer_reference)
+    {
+        return  ClientGatewayToken::query()
+                                  ->where('company_id', $this->company_gateway->company_id)
+                                  ->where('gateway_customer_reference', $gateway_customer_reference)
+                                  ->where('token', $token)
+                                  ->first();
+    }
+
+    /**
+     * ImportCustomers
+     *
+     * Only their methods because checkout.com
+     * does not have a list route for customers
+     *
+     * @return void
+     */
+    public function importCustomers()
+    {
+        $this->init();
+
+        $this->company_gateway
+             ->company
+             ->clients()
+             ->cursor()
+             ->each(function ($client) {
+
+                 if (!str_contains($client->present()->email(), "@")) {
+                     return;
+                 }
+
+                 try {
+                     $customer = $this->gateway->getCustomersClient()->get($client->present()->email());
+                 } catch (\Exception $e) {
+                     nlog("Checkout: Customer not found");
+                     return;
+                 }
+
+                 $this->client = $client;
+
+                 nlog($customer['instruments']);
+
+                 foreach ($customer['instruments'] as $card) {
+                     if (
+                         $card['type'] != 'card' ||
+                         Carbon::createFromDate($card['expiry_year'], $card['expiry_month'], '1')->lt(now()) || //@phpstan-ignore-line
+                         $this->getToken($card['id'], $customer['id'])
+                     ) {
+                         continue;
+                     }
+
+                     $payment_meta = new \stdClass();
+                     $payment_meta->exp_month = (string) $card['expiry_month'];
+                     $payment_meta->exp_year = (string) $card['expiry_year'];
+                     $payment_meta->brand = (string) $card['scheme'];
+                     $payment_meta->last4 = (string) $card['last4'];
+                     $payment_meta->type = (int) GatewayType::CREDIT_CARD;
+
+                     $data = [
+                         'payment_meta' => $payment_meta,
+                         'token' => $card['id'],
+                         'payment_method_id' => GatewayType::CREDIT_CARD,
+                     ];
+
+                     $this->storeGatewayToken($data, ['gateway_customer_reference' => $customer['id']]);
+
+                 }
+
+             });
+    }
+
+    public function livewirePaymentView(array $data): string
+    {
+        return $this->payment_method->livewirePaymentView($data);
     }
 }

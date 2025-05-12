@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -54,6 +54,8 @@ class DocumentExport extends BaseExport
 
         $report = $query->cursor()
                 ->map(function ($document) {
+
+                    /** @var \App\Models\Document $document */
                     $row = $this->buildRow($document);
                     return $this->processMetaData($row, $document);
                 })->toArray();
@@ -76,9 +78,9 @@ class DocumentExport extends BaseExport
 
         $query = Document::query()->where('company_id', $this->company->id);
 
-        $query = $this->addDateRange($query);
+        $query = $this->addDateRange($query, 'documents');
 
-        if($this->input['document_email_attachment'] ?? false) {
+        if ($this->input['document_email_attachment'] ?? false) {
             $this->queueDocuments($query);
         }
 
@@ -92,12 +94,14 @@ class DocumentExport extends BaseExport
 
         //load the CSV document from a string
         $this->csv = Writer::createFromString();
+        \League\Csv\CharsetConverter::addTo($this->csv, 'UTF-8', 'UTF-8');
 
         //insert the header
         $this->csv->insertOne($this->buildHeader());
 
         $query->cursor()
               ->each(function ($entity) {
+                  /** @var mixed $entity */
                   $this->csv->insertOne($this->buildRow($entity));
               });
 

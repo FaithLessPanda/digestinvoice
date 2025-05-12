@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -80,6 +80,8 @@ class CompanyGatewayTransformer extends EntityTransformer
             'label' => (string) $company_gateway->label ?: '',
             'token_billing' => (string) $company_gateway->token_billing,
             'test_mode' => (bool) $company_gateway->isTestMode(),
+            'always_show_required_fields' => (bool) $company_gateway->always_show_required_fields,
+            'settings' => $company_gateway->settings ?: new stdClass(),
         ];
     }
 

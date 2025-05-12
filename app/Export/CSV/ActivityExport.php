@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -25,8 +25,6 @@ use League\Csv\Writer;
 
 class ActivityExport extends BaseExport
 {
-    private $entity_transformer;
-
     public string $date_key = 'created_at';
 
     private string $date_format = 'YYYY-MM-DD';
@@ -43,7 +41,7 @@ class ActivityExport extends BaseExport
     {
         $this->company = $company;
         $this->input = $input;
-        $this->entity_transformer = new ActivityTransformer();
+
     }
 
     public function returnJson()
@@ -59,6 +57,7 @@ class ActivityExport extends BaseExport
 
         $report = $query->cursor()
             ->map(function ($resource) {
+                /** @var \App\Models\Activity $resource */
                 $row = $this->buildActivityRow($resource);
                 return $this->processMetaData($row, $resource);
             })->toArray();
@@ -102,7 +101,10 @@ class ActivityExport extends BaseExport
         $t = app('translator');
         $t->replace(Ninja::transformTranslations($this->company->settings));
 
-        $this->date_format = DateFormat::find($this->company->settings->date_format_id)->format;
+        /** @var \App\Models\DateFormat $df */
+        $df = DateFormat::query()->find($this->company->settings->date_format_id);
+
+        $this->date_format = $df->format;
 
         if (count($this->input['report_keys']) == 0) {
             $this->input['report_keys'] = array_values($this->entity_keys);
@@ -111,7 +113,7 @@ class ActivityExport extends BaseExport
         $query = Activity::query()
                         ->where('company_id', $this->company->id);
 
-        $query = $this->addDateRange($query);
+        $query = $this->addDateRange($query, 'activities');
 
         return $query;
     }
@@ -122,6 +124,7 @@ class ActivityExport extends BaseExport
 
         //load the CSV document from a string
         $this->csv = Writer::createFromString();
+        \League\Csv\CharsetConverter::addTo($this->csv, 'UTF-8', 'UTF-8');
 
         //insert the header
         $this->csv->insertOne($this->buildHeader());
@@ -129,6 +132,9 @@ class ActivityExport extends BaseExport
 
         $query->cursor()
               ->each(function ($entity) {
+
+                  /** @var \App\Models\Activity $entity */
+
                   $this->buildRow($entity);
               });
 
@@ -142,10 +148,10 @@ class ActivityExport extends BaseExport
 
     }
 
-    private function decorateAdvancedFields(Task $task, array $entity): array
-    {
-        return $entity;
-    }
+    // private function decorateAdvancedFields(Task $task, array $entity): array
+    // {
+    //     return $entity;
+    // }
 
 
     public function processMetaData(array $row, $resource): array

@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -94,6 +94,8 @@ class StoreUserRequest extends Request
         if (array_key_exists('last_name', $input)) {
             $input['last_name'] = strip_tags($input['last_name']);
         }
+
+        $input['id'] = null;
 
         $this->replace($input);
     }

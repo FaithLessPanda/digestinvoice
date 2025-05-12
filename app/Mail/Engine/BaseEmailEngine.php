@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -126,7 +126,7 @@ class BaseEmailEngine implements EngineInterface
 
         if (! empty($this->variables)) {
 
-            $text = str_replace(['$paymentLink', '$viewButton', '$view_button', '$viewLink', '$view_link'], '$view_url', $text);
+            $text = str_replace(['$paymentLink', '$viewButton', '$view_button', '$viewLink', '$view_link'], "\r\n\r\n".'$view_url'."\r\n", $text);
             $text = str_replace(array_keys($this->variables), array_values($this->variables), $text);
             $text = str_replace(array_keys($this->variables), array_values($this->variables), $text);
 

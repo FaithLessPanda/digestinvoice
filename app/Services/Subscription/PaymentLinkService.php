@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -117,7 +117,7 @@ class PaymentLinkService
 
             /* 06-04-2022 */
             /* We may not be in a state where the user is present */
-            if (auth()->guard('contact')) {
+            if (auth()->guard('contact')->user()) {
                 return $this->handleRedirect('/client/invoices/' . $this->encodePrimaryKey($payment_hash->fee_invoice_id));
             }
         }
@@ -166,12 +166,12 @@ class PaymentLinkService
         // Redirects from here work just fine. Livewire will respect it.
         $client_contact = ClientContact::find($this->decodePrimaryKey($data['contact_id']));
 
-        if(is_string($data['client_id'])) {
+        if (is_string($data['client_id'])) {
             $data['client_id'] = $this->decodePrimaryKey($data['client_id']);
         }
 
         if (!$this->subscription->trial_enabled) {
-            return new \Exception("Trials are disabled for this product");
+            throw new \Exception("Trials are disabled for this product");
         }
 
         //create recurring invoice with start date = trial_duration + 1 day

@@ -20,6 +20,7 @@ use App\Models\Subscription;
 use App\Models\ClientContact;
 use App\Utils\Traits\MakesHash;
 use App\Models\RecurringInvoice;
+use App\Factory\InvoiceItemFactory;
 use App\Helpers\Invoice\InvoiceSum;
 use App\Repositories\InvoiceRepository;
 use Illuminate\Database\Eloquent\Model;
@@ -27,8 +28,8 @@ use Illuminate\Support\Facades\Session;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 
 /**
- * @test
- * @covers App\Http\Controllers\InvoiceController
+ * 
+ *  App\Http\Controllers\InvoiceController
  */
 class InvoiceTest extends TestCase
 {
@@ -38,7 +39,7 @@ class InvoiceTest extends TestCase
 
     public $faker;
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
@@ -49,6 +50,161 @@ class InvoiceTest extends TestCase
         Model::reguard();
 
         $this->makeTestData();
+    }
+
+
+    public function testLineItemValidation()
+    {
+
+        $line_items = [];
+
+        $item = new \stdClass();
+        $item->quantity = 1;
+        $item->cost = 100000000;
+        $item->type_id = '1';
+        $item->tax_name1 = ['tax_name1'];
+        $item->tax_rate1 = 10;
+        $item->tax_name2 = 'tax_name2';
+        $item->tax_rate2 = 10;
+        $item->tax_name3 = 'tax_name3';
+        $item->tax_rate3 = 10;
+
+        $line_items[] = $item;
+
+        $data = [
+            'status_id' => 1,
+            'number' => '',
+            'discount' => 0,
+            'is_amount_discount' => 1,
+            'po_number' => '3434343',
+            'public_notes' => 'notes',
+            'is_deleted' => 0,
+            'custom_value1' => 0,
+            'custom_value2' => 0,
+            'custom_value3' => 0,
+            'custom_value4' => 0,
+            'client_id' => $this->client->hashed_id,
+            'line_items' => $line_items,
+        ];
+
+        $response = $this->withHeaders([
+            'X-API-SECRET' => config('ninja.api_secret'),
+            'X-API-TOKEN' => $this->token,
+        ])->postJson('/api/v1/invoices?mark_sent=true', $data)
+            ->assertStatus(200);
+
+        $arr = $response->json();
+
+    }
+
+    public function testMaxDiscount()
+    {
+
+
+        $line_items = [];
+
+        $item = InvoiceItemFactory::create();
+        $item->quantity = 1;
+        $item->cost = 100000000;
+        $item->type_id = '1';
+
+        $line_items[] = $item;
+
+        $data = [
+            'status_id' => 1,
+            'number' => '',
+            'discount' => 0,
+            'is_amount_discount' => 1,
+            'po_number' => '3434343',
+            'public_notes' => 'notes',
+            'is_deleted' => 0,
+            'custom_value1' => 0,
+            'custom_value2' => 0,
+            'custom_value3' => 0,
+            'custom_value4' => 0,
+            'client_id' => $this->client->hashed_id,
+            'line_items' => $line_items,
+        ];
+
+        $response = $this->withHeaders([
+            'X-API-SECRET' => config('ninja.api_secret'),
+            'X-API-TOKEN' => $this->token,
+        ])->postJson('/api/v1/invoices?mark_sent=true', $data)
+            ->assertStatus(200);
+
+        $arr = $response->json();
+
+        $this->assertEquals(2, $arr['data']['status_id']);
+        $this->assertEquals(100000000, $arr['data']['amount']);
+        $this->assertEquals(100000000, $arr['data']['balance']);
+
+        $data = [
+                'status_id' => 1,
+                'number' => '',
+                'discount' => 100000000,
+                'is_amount_discount' => 1,
+                'po_number' => '3434343',
+                'public_notes' => 'notes',
+                'is_deleted' => 0,
+                'custom_value1' => 0,
+                'custom_value2' => 0,
+                'custom_value3' => 0,
+                'custom_value4' => 0,
+                'client_id' => $this->client->hashed_id,
+                'line_items' => $line_items,
+            ];
+
+        $response = $this->withHeaders([
+            'X-API-SECRET' => config('ninja.api_secret'),
+            'X-API-TOKEN' => $this->token,
+        ])->postJson('/api/v1/invoices?mark_sent=true', $data)
+            ->assertStatus(200);
+
+        $arr = $response->json();
+
+        $this->assertEquals(2, $arr['data']['status_id']);
+        $this->assertEquals(0, $arr['data']['amount']);
+        $this->assertEquals(0, $arr['data']['balance']);
+        $this->assertEquals(100000000, $arr['data']['discount']);
+
+        $line_items = [];
+        $item = InvoiceItemFactory::create();
+        $item->quantity = 1;
+        $item->cost = 100000000;
+        $item->discount = 100000000;
+        $item->type_id = '1';
+
+        $line_items[] = $item;
+
+        $data = [
+                'status_id' => 1,
+                'number' => '',
+                'discount' => 0,
+                'is_amount_discount' => 1,
+                'po_number' => '3434343',
+                'public_notes' => 'notes',
+                'is_deleted' => 0,
+                'custom_value1' => 0,
+                'custom_value2' => 0,
+                'custom_value3' => 0,
+                'custom_value4' => 0,
+                'client_id' => $this->client->hashed_id,
+                'line_items' => $line_items,
+            ];
+
+        $response = $this->withHeaders([
+            'X-API-SECRET' => config('ninja.api_secret'),
+            'X-API-TOKEN' => $this->token,
+        ])->postJson('/api/v1/invoices?mark_sent=true', $data)
+            ->assertStatus(200);
+
+        $arr = $response->json();
+
+        $this->assertEquals(2, $arr['data']['status_id']);
+        $this->assertEquals(0, $arr['data']['amount']);
+        $this->assertEquals(0, $arr['data']['balance']);
+
+
     }
 
     public function testInvoicePaymentLinkMutation()
@@ -101,7 +257,7 @@ class InvoiceTest extends TestCase
             'company_id' => $this->company->id,
             'client_id' => $this->client->id,
         ]);
-        
+
         $invoice = [
             'status_id' => 1,
             'number' => 'dfdfd',
@@ -187,7 +343,7 @@ class InvoiceTest extends TestCase
             'X-API-TOKEN' => $this->token,
         ])->get('/api/v1/invoices?date_range=1971-01-01,1971-01-03', )
         ->assertStatus(200);
-        
+
         $arr = $response->json();
 
         $this->assertCount(10, $arr['data']);

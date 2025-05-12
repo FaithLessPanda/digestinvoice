@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -54,7 +54,6 @@ class TaskObserver
             $event = Webhook::EVENT_DELETE_TASK;
         }
 
-
         $subscriptions = Webhook::where('company_id', $task->company_id)
                                     ->where('event_id', $event)
                                     ->exists();
@@ -83,6 +82,7 @@ class TaskObserver
         if ($subscriptions) {
             WebhookHandler::dispatch(Webhook::EVENT_ARCHIVE_TASK, $task, $task->company)->delay(0);
         }
+
     }
 
     /**

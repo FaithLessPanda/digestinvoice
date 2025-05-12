@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -49,6 +49,9 @@ use App\Http\Requests\Client\ClientDocumentsRequest;
 use App\Http\Requests\Client\ReactivateClientEmailRequest;
 use App\Models\Expense;
 use App\Models\Payment;
+use App\Models\Project;
+use App\Models\RecurringExpense;
+use App\Models\RecurringInvoice;
 use App\Models\Task;
 use App\Transformers\DocumentTransformer;
 
@@ -86,7 +89,7 @@ class ClientController extends BaseController
     /**
      *
      * @param ClientFilters $filters
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function index(ClientFilters $filters)
@@ -103,7 +106,7 @@ class ClientController extends BaseController
      *
      * @param ShowClientRequest $request
      * @param Client $client
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function show(ShowClientRequest $request, Client $client)
@@ -116,7 +119,7 @@ class ClientController extends BaseController
      *
      * @param EditClientRequest $request
      * @param Client $client
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function edit(EditClientRequest $request, Client $client)
@@ -129,7 +132,7 @@ class ClientController extends BaseController
      *
      * @param UpdateClientRequest $request
      * @param Client $client
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function update(UpdateClientRequest $request, Client $client)
@@ -138,7 +141,7 @@ class ClientController extends BaseController
             return $request->disallowUpdate();
         }
 
-        /** @var \App\Models\User $user */
+        /** @var ?\App\Models\User $user */
         $user = auth()->user();
 
         $client = $this->client_repo->save($request->all(), $client);
@@ -154,7 +157,7 @@ class ClientController extends BaseController
      * Show the form for creating a new resource.
      *
      * @param CreateClientRequest $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function create(CreateClientRequest $request)
@@ -171,7 +174,7 @@ class ClientController extends BaseController
      * Store a newly created resource in storage.
      *
      * @param StoreClientRequest $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function store(StoreClientRequest $request)
@@ -200,7 +203,7 @@ class ClientController extends BaseController
      *
      * @param DestroyClientRequest $request
      * @param Client $client
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      * @throws \Exception
      */
@@ -214,7 +217,7 @@ class ClientController extends BaseController
     /**
      * Perform bulk actions on the list view.
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function bulk(BulkClientRequest $request)
@@ -229,12 +232,12 @@ class ClientController extends BaseController
                          ->whereIn('id', $request->ids)
                          ->get();
 
-        if($action == 'template' && $user->can('view', $clients->first())) {
+        if ($action == 'template' && $user->can('view', $clients->first())) {
 
             $hash_or_response = $request->boolean('send_email') ? 'email sent' : \Illuminate\Support\Str::uuid();
 
             TemplateAction::dispatch(
-                $clients->pluck('id')->toArray(),
+                $clients->pluck('hashed_id')->toArray(),
                 $request->template_id,
                 Client::class,
                 $user->id,
@@ -245,6 +248,26 @@ class ClientController extends BaseController
             );
 
             return response()->json(['message' => $hash_or_response], 200);
+        }
+
+        if ($action == 'assign_group' && $user->can('edit', $clients->first())) {
+
+            $this->client_repo->assignGroup($clients, $request->group_settings_id);
+
+            return $this->listResponse(Client::query()->withTrashed()->company()->whereIn('id', $request->ids));
+
+        }
+
+        if ($action == 'bulk_update' && $user->can('edit', $clients->first())) {
+
+            $clients = Client::withTrashed()
+                    ->company()
+                    ->whereIn('id', $request->ids);
+
+            $this->client_repo->bulkUpdate($clients, $request->column, $request->new_value);
+
+            return $this->listResponse(Client::query()->withTrashed()->company()->whereIn('id', $request->ids));
+
         }
 
         $clients->each(function ($client) use ($action, $user) {
@@ -261,7 +284,7 @@ class ClientController extends BaseController
      *
      * @param UploadClientRequest $request
      * @param Client $client
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function upload(UploadClientRequest $request, Client $client)
@@ -282,7 +305,7 @@ class ClientController extends BaseController
      *
      * @param PurgeClientRequest $request
      * @param Client $client
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response
      *
      */
     public function purge(PurgeClientRequest $request, Client $client)
@@ -291,7 +314,7 @@ class ClientController extends BaseController
         $client->documents->each(function ($document) {
             try {
                 Storage::disk(config('filesystems.default'))->delete($document->url);
-            } catch(\Exception $e) {
+            } catch (\Exception $e) {
                 nlog($e->getMessage());
             }
         });
@@ -310,7 +333,7 @@ class ClientController extends BaseController
          * @param PurgeClientRequest $request
          * @param Client $client
          * @param string $mergeable_client
-         * @return \Illuminate\Http\JsonResponse
+         * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response
          *
          */
 
@@ -325,7 +348,11 @@ class ClientController extends BaseController
                             ->first();
 
         if (!$m_client) {
-            return response()->json(['message' => "Client not found"]);
+            return response()->json(['message' => "Client not found"], 400);
+        }
+
+        if ($m_client->id == $client->id) {
+            return response()->json(['message' => "Attempting to merge the same client is not possible."], 400);
         }
 
         $merged_client = $client->service()->merge($m_client)->save();
@@ -338,11 +365,11 @@ class ClientController extends BaseController
      *
      * @param  PurgeClientRequest $request
      * @param  Client $client
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response
      */
     public function updateTaxData(PurgeClientRequest $request, Client $client)
     {
-        if($client->company->account->isPaid()) {
+        if ($client->company->account->isPaid()) {
             (new UpdateTaxData($client, $client->company))->handle();
         }
 
@@ -354,14 +381,14 @@ class ClientController extends BaseController
      *
      * @param  ReactivateClientEmailRequest $request
      * @param  string $bounce_id //could also be the invitationId
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response
      */
     public function reactivateEmail(ReactivateClientEmailRequest $request, string $bounce_id)
     {
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
-        if(stripos($bounce_id, '-') !== false) {
+        if (stripos($bounce_id, '-') !== false) {
             $log =
                 SystemLog::query()
                 ->where('company_id', $user->company()->id)
@@ -373,30 +400,48 @@ class ClientController extends BaseController
 
             $resolved_bounce_id = false;
 
-            if($log && ($log?->log['ID'] ?? false)) {
+            if ($log && ($log?->log['ID'] ?? false)) {
                 $resolved_bounce_id = $log->log['ID'] ?? false;
             }
 
-            if(!$resolved_bounce_id) {
-                $ppwebhook = new ProcessPostmarkWebhook([]);
+            if (!$resolved_bounce_id) {
+                $ppwebhook = new ProcessPostmarkWebhook([], config('services.postmark.token'));
                 $resolved_bounce_id = $ppwebhook->getBounceId($bounce_id);
             }
 
-            if(!$resolved_bounce_id) {
+            if (!$resolved_bounce_id) {
                 return response()->json(['message' => 'Bounce ID not found'], 400);
             }
 
             $bounce_id = $resolved_bounce_id;
+
+            $record = $log->log;
+            $record['ID'] = '';
+
+            //2025-01-15 15:00:00 - unset the bounce ID here.
+            $events = $record['history']['events'];
+
+            foreach($events as &$event)
+            {
+                $event['bounce_id'] = "";
+            }
+            unset($event);
+
+            $record['history']['events'] = $events;
+
+            $log->log = $record;
+            $log->save();
+
         }
 
         $postmark = new PostmarkClient(config('services.postmark.token'));
 
         try {
 
-            /** @var \Postmark\Models\DynamicResponseModel $response */
+            /** @var ?\Postmark\Models\DynamicResponseModel $response */
             $response = $postmark->activateBounce((int)$bounce_id);
 
-            if($response && $response?->Message == 'OK' && !$response->Bounce->Inactive && $response->Bounce->Email) {
+            if ($response && $response?->Message == 'OK' && !$response->Bounce->Inactive && $response->Bounce->Email) { // @phpstan-ignore-line
 
                 $email =  $response->Bounce->Email;
                 //remove email from quarantine. //@TODO
@@ -404,7 +449,7 @@ class ClientController extends BaseController
 
             return response()->json(['message' => 'Success'], 200);
 
-        } catch(\Exception $e) {
+        } catch (\Exception $e) {
 
             return response()->json(['message' => $e->getMessage(), 400]);
 
@@ -421,7 +466,7 @@ class ClientController extends BaseController
 
         $documents = Document::query()
             ->company()
-            ->whereHasMorph('documentable', [Invoice::class, Quote::class, Credit::class, Expense::class, Payment::class, Task::class], function ($query) use ($client) {
+            ->whereHasMorph('documentable', [Invoice::class, Quote::class, Credit::class, Expense::class, Payment::class, Task::class, RecurringInvoice::class, RecurringExpense::class, Project::class], function ($query) use ($client) {
                 $query->where('client_id', $client->id);
             })
             ->orWhereHasMorph('documentable', [Client::class], function ($query) use ($client) {

@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -15,7 +15,6 @@ use App\Helpers\Invoice\InvoiceSum;
 use App\Helpers\Invoice\InvoiceSumInclusive;
 use App\Models\Presenters\RecurringQuotePresenter;
 use App\Services\Recurring\RecurringService;
-use App\Utils\Traits\MakesDates;
 use App\Utils\Traits\MakesHash;
 use App\Utils\Traits\Recurring\HasRecurrence;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -34,31 +33,31 @@ use Laracasts\Presenter\PresentableTrait;
  * @property int|null $vendor_id
  * @property int $status_id
  * @property float $discount
- * @property int $is_amount_discount
+ * @property bool $is_amount_discount
  * @property string|null $number
  * @property string|null $po_number
  * @property string|null $date
  * @property string|null $due_date
- * @property int $is_deleted
- * @property object|null $line_items
+ * @property bool $is_deleted
+ * @property array $line_items
  * @property object|null $backup
  * @property string|null $footer
  * @property string|null $public_notes
  * @property string|null $private_notes
  * @property string|null $terms
  * @property string|null $tax_name1
- * @property string $tax_rate1
+ * @property float $tax_rate1
  * @property string|null $tax_name2
- * @property string $tax_rate2
+ * @property float $tax_rate2
  * @property string|null $tax_name3
- * @property string $tax_rate3
- * @property string $total_taxes
+ * @property float $tax_rate3
+ * @property float $total_taxes
  * @property string|null $custom_value1
  * @property string|null $custom_value2
  * @property string|null $custom_value3
  * @property string|null $custom_value4
- * @property string $amount
- * @property string $balance
+ * @property float $amount
+ * @property float $balance
  * @property string|null $last_viewed
  * @property int $frequency_id
  * @property int $design_id
@@ -69,22 +68,22 @@ use Laracasts\Presenter\PresentableTrait;
  * @property int|null $updated_at
  * @property int|null $deleted_at
  * @property string $auto_bill
- * @property int $auto_bill_enabled
- * @property string $paid_to_date
- * @property string|null $custom_surcharge1
- * @property string|null $custom_surcharge2
- * @property string|null $custom_surcharge3
- * @property string|null $custom_surcharge4
+ * @property bool $auto_bill_enabled
+ * @property float $paid_to_date
+ * @property float|null $custom_surcharge1
+ * @property float|null $custom_surcharge2
+ * @property float|null $custom_surcharge3
+ * @property float|null $custom_surcharge4
  * @property int $custom_surcharge_tax1
  * @property int $custom_surcharge_tax2
  * @property int $custom_surcharge_tax3
  * @property int $custom_surcharge_tax4
  * @property string|null $due_date_days
- * @property string $exchange_rate
+ * @property float $exchange_rate
  * @property float|null $partial
  * @property string|null $partial_due_date
  * @property int|null $subscription_id
- * @property int $uses_inclusive_taxes
+ * @property bool $uses_inclusive_taxes
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Activity> $activities
  * @property-read int|null $activities_count
  * @property-read \App\Models\User|null $assigned_user
@@ -125,7 +124,6 @@ class RecurringQuote extends BaseModel
     use MakesHash;
     use SoftDeletes;
     use Filterable;
-    use MakesDates;
     use HasRecurrence;
     use PresentableTrait;
 
@@ -269,7 +267,7 @@ class RecurringQuote extends BaseModel
 
     public function activities()
     {
-        return $this->hasMany(Activity::class)->orderBy('id', 'DESC')->take(50);
+        return $this->hasMany(Activity::class)->where('company_id', $this->company_id)->where('client_id', $this->client_id)->orderBy('id', 'DESC')->take(50);
     }
 
     public function history()
@@ -549,7 +547,7 @@ class RecurringQuote extends BaseModel
             case 'terms':
                 return $this->calculateDateFromTerms($date);
             default:
-                return $this->setDayOfMonth($date, $this->due_date_days);
+                return $this->setDayOfMonth($date, ($this->due_date_days ?? 1));
         }
     }
 
@@ -569,7 +567,7 @@ class RecurringQuote extends BaseModel
             return null;
         }
 
-        return $new_date->addDays($client_payment_terms); //add the number of days in the payment terms to the date
+        return $new_date->addDays((int)$client_payment_terms); //add the number of days in the payment terms to the date
     }
 
     /**

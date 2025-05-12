@@ -25,11 +25,18 @@
 
 @push('footer')
 
-<script src="https://www.paypal.com/sdk/js?client-id={!! $client_id !!}&currency={!! $currency !!}&merchant-id={!! $merchantId !!}&components=buttons,funding-eligibility&intent=capture&enable-funding={!! $funding_source !!}"  data-partner-attribution-id="invoiceninja_SP_PPCP"></script>
-<div id="paypal-button-container"></div>
-<script>
+<script type="application/json" fncls="fnparams-dede7cc5-15fd-4c75-a9f4-36c430ee3a99">
+    {
+        "f":"{{ $guid }}",
+        "s":"paypal.ppcp.pay"        
+    }
+</script>
 
-//&buyer-country=US&currency=USD&enable-funding=venmo
+<script type="text/javascript" src="https://c.paypal.com/da/r/fb.js"></script>
+
+
+<script src="https://www.paypal.com/sdk/js?client-id={!! $client_id !!}&currency={!! $currency !!}&merchant-id={!! $merchantId !!}&components=buttons,funding-eligibility&intent=capture&enable-funding={!! $funding_source !!}"  data-partner-attribution-id="invoiceninja_SP_PPCP"></script>
+<script>
     const fundingSource = "{!! $funding_source !!}";
     const clientId = "{{ $client_id }}";
     const orderId = "{!! $order_id !!}";
@@ -43,13 +50,53 @@
         },
         onApprove: function(data, actions) {
 
-            var errorDetail = Array.isArray(data.details) && data.details[0];
+            document.getElementById("gateway_response").value =JSON.stringify( data );  
+            
+            formData = JSON.stringify(Object.fromEntries(new FormData(document.getElementById("server_response")))),
+
+            fetch('{{ route('client.payments.response') }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    "X-Requested-With": "XMLHttpRequest",
+                    "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: formData,
+            })
+            .then(response => {
+
+                if (!response.ok) {
+                    return response.json().then(errorData => {
+                        throw new Error(errorData.message ?? 'Unknown error.');
+                    });
+                }
+                
+                return response.json();                
+
+            })
+            .then(data => {
+
+                var errorDetail = Array.isArray(data.details) && data.details[0];
+
                 if (errorDetail && ['INSTRUMENT_DECLINED', 'PAYER_ACTION_REQUIRED'].includes(errorDetail.issue)) {
-                return actions.restart();
-            }
+                    return actions.restart();
+                }
+
+                if(data.redirect){
+                    window.location.href = data.redirect;
+                    return;
+                }
 
                 document.getElementById("gateway_response").value =JSON.stringify( data );
                 document.getElementById("server_response").submit();
+            })
+            .catch(error => {
+                console.error('Error:', error);
+
+                document.getElementById('errors').textContent = `Sorry, your transaction could not be processed...\n\n${error.message}`;
+                document.getElementById('errors').hidden = false;
+            });
+
 
         },
         onCancel: function() {
@@ -60,7 +107,6 @@
             document.getElementById("server_response").submit();
         },
         onClick: function (){
-            document.getElementById('paypal-button-container').hidden = true;
         }
     
     }).render('#paypal-button-container').catch(function(err) {

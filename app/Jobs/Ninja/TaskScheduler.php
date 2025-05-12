@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -57,12 +57,13 @@ class TaskScheduler implements ShouldQueue
                 ->cursor()
                 ->each(function ($scheduler) {
 
-                    nlog("Doing job {$scheduler->name}");
+                    nlog("Doing job ::{$scheduler->id}:: {$scheduler->name}");
 
                     try {
+                        //@var \App\Models\Schedule $scheduler
                         $scheduler->service()->runTask();
-                    } catch(\Exception $e) {
-                        nlog($e->getMessage());
+                    } catch (\Throwable $e) {
+                        nlog("Exception:: TaskScheduler:: Doing job :: {$scheduler->id} :: {$scheduler->name}" . $e->getMessage());
                     }
 
                 });
@@ -82,12 +83,13 @@ class TaskScheduler implements ShouldQueue
                 ->cursor()
                 ->each(function ($scheduler) {
 
-                    nlog("Doing job {$scheduler->name}");
+                    nlog("Doing job ::{$scheduler->id}:: {$scheduler->name}");
 
                     try {
                         /** @var \App\Models\Scheduler $scheduler */
                         $scheduler->service()->runTask();
-                    } catch(\Exception $e) {
+                    } catch (\Throwable $e) {
+                        nlog("Exception:: TaskScheduler:: #{$scheduler->id}::" . $e->getMessage());
                         nlog($e->getMessage());
                     }
 

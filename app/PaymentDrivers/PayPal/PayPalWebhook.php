@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -56,14 +56,14 @@ class PayPalWebhook implements ShouldQueue
         // $this->endpoint = $this->test_endpoint;
 
         //this can cause problems verifying the webhook, so unset it if it exists
-        if(isset($this->webhook_request['q'])) {
+        if (isset($this->webhook_request['q'])) {
             unset($this->webhook_request['q']);
         }
 
-        if($this->verifyWebhook()) {
+        if ($this->verifyWebhook()) {
             nlog('verified');
 
-            match($this->webhook_request['event_type']) {
+            match($this->webhook_request['event_type']) {//@phpstan-ignore-line
                 'CHECKOUT.ORDER.COMPLETED' => $this->checkoutOrderCompleted(),
             };
 
@@ -200,7 +200,7 @@ class PayPalWebhook implements ShouldQueue
         $amount = $order['purchase_units'][0]['payments']['captures'][0]['amount']['value'];
         $payment_hash = MultiDB::findAndSetByPaymentHash($order['purchase_units'][0]['custom_id']);
         $merchant_id = $order['purchase_units'][0]['payee']['merchant_id'];
-        if(!$payment_hash) {
+        if (!$payment_hash) {
 
             $ninja_company = Company::on('db-ninja-01')->find(config('ninja.ninja_default_company_id'));
             $ninja_company->notification(new PayPalUnlinkedTransaction($order['id'], $transaction_reference))->ninja();
@@ -208,15 +208,15 @@ class PayPalWebhook implements ShouldQueue
         }
 
         nlog("payment completed check");
-        if($payment_hash->payment && $payment_hash->payment->status_id == Payment::STATUS_COMPLETED) { // Payment made, all good!
+        if ($payment_hash->payment && $payment_hash->payment->status_id == Payment::STATUS_COMPLETED) { // Payment made, all good!
             return;
         }
 
         nlog("invoice paid check");
-        if($payment_hash->fee_invoice && $payment_hash->fee_invoice->status_id == Invoice::STATUS_PAID) { // Payment made, all good!
+        if ($payment_hash->fee_invoice && $payment_hash->fee_invoice->status_id == Invoice::STATUS_PAID) { // Payment made, all good!
 
             nlog("payment status check");
-            if($payment_hash->payment && $payment_hash->payment->status_id != Payment::STATUS_COMPLETED) { // Make sure the payment is marked as completed
+            if ($payment_hash->payment && $payment_hash->payment->status_id != Payment::STATUS_COMPLETED) { // Make sure the payment is marked as completed
                 $payment_hash->payment->status_id = Payment::STATUS_COMPLETED;
                 $payment_hash->push();
             }
@@ -224,11 +224,11 @@ class PayPalWebhook implements ShouldQueue
         }
 
         nlog("create payment check");
-        if($payment_hash->fee_invoice && in_array($payment_hash->fee_invoice->status_id, [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL])) {
+        if ($payment_hash->fee_invoice && in_array($payment_hash->fee_invoice->status_id, [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL])) {
 
             $payment = Payment::where('transaction_reference', $transaction_reference)->first();
 
-            if(!$payment) {
+            if (!$payment) {
                 nlog("make payment here!");
                 $payment = $this->createPayment($payment_hash, [
                     'amount' => $amount,
@@ -268,7 +268,7 @@ class PayPalWebhook implements ShouldQueue
         $order = $driver->getOrder($this->webhook_request['resource']['id']);
         $source = 'paypal';
 
-        if(isset($order['payment_source'])) {
+        if (isset($order['payment_source'])) {
             $source = array_key_first($order['payment_source']);
         }
 
@@ -297,17 +297,16 @@ class PayPalWebhook implements ShouldQueue
         $gateway = CompanyGateway::query()
             ->where('company_id', $company->id)
             ->where('gateway_key', $this->gateway_key)
-            ->cursor()
-            ->first(function ($cg) use ($merchant_id) {
+            ->first(function ($cg) use ($merchant_id) { //@phpstan-ignore-line
                 $config = $cg->getConfig();
 
-                if($config->merchantId == $merchant_id) {
+                if ($config->merchantId == $merchant_id) {
                     return $cg;
                 }
 
             });
 
-        return $gateway ?? false;
+        return $gateway ?? null;
     }
 
     //--------------------------------------------------------------------------------------//
@@ -337,7 +336,7 @@ class PayPalWebhook implements ShouldQueue
         nlog($r);
         nlog($r->json());
 
-        if($r->successful() && $r->json()['verification_status'] == 'SUCCESS') {
+        if ($r->successful() && $r->json()['verification_status'] == 'SUCCESS') {
             return true;
         }
 
@@ -399,3 +398,64 @@ class PayPalWebhook implements ShouldQueue
 }
 }
 */
+
+
+/** token created
+ * {
+         "id":"WH-1KN88282901968003-82E75604WM969463F",
+         "event_version":"1.0",
+         "create_time":"2022-08-15T14:13:48.978Z",
+         "resource_type":"payment_token",
+         "resource_version":"3.0",
+         "event_type":"VAULT.PAYMENT-TOKEN.CREATED",
+         "summary":"A payment token has been created.",
+         "resource":{
+            "time_created":"2022-08-15T07:13:48.964PDT",
+            "links":[
+               {
+                  "href":"https://api-m.sandbox.paypal.com/v3/vault/payment-tokens/9n6724m",
+                  "rel":"self",
+                  "method":"GET",
+                  "encType":"application/json"
+               },
+               {
+                  "href":"https://api-m.sandbox.paypal.com/v3/vault/payment-tokens/9n6724m",
+                  "rel":"delete",
+                  "method":"DELETE",
+                  "encType":"application/json"
+               }
+            ],
+            "id":"9n6724m",
+            "payment_source":{
+               "card":{
+                  "last_digits":"1111",
+                  "brand":"VISA",
+                  "expiry":"2027-02",
+                  "billing_address":{
+                     "address_line_1":"2211 N First Street",
+                     "address_line_2":"17.3.160",
+                     "admin_area_2":"San Jose",
+                     "admin_area_1":"CA",
+                     "postal_code":"95131",
+                     "country_code":"US"
+                  }
+               }
+            },
+            "customer":{
+               "id":"695922590"
+            }
+         },
+         "links":[
+            {
+               "href":"https://api-m.sandbox.paypal.com/v1/notifications/webhooks-events/WH-1KN88282901968003-82E75604WM969463F",
+               "rel":"self",
+               "method":"GET"
+            },
+            {
+               "href":"https://api-m.sandbox.paypal.com/v1/notifications/webhooks-events/WH-1KN88282901968003-82E75604WM969463F/resend",
+               "rel":"resend",
+               "method":"POST"
+            }
+         ]
+      }
+ */

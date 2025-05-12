@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -56,7 +56,7 @@ class BackupUpdate extends Command
     {
         //always return state to first DB
 
-        if(Ninja::isSelfHost()) {
+        if (Ninja::isSelfHost()) {
             return;
         }
 
@@ -175,8 +175,8 @@ class BackupUpdate extends Command
 
                     try {
                         $doc_bin = $document->getFile();
-                    } catch(\Exception $e) {
-                        nlog($e->getMessage());
+                    } catch (\Exception $e) {
+                        nlog("Exception:: BackupUpdate::" . $e->getMessage());
                     }
 
                     if ($doc_bin) {
@@ -184,8 +184,6 @@ class BackupUpdate extends Command
 
                         $document->disk = $this->option('disk');
                         $document->saveQuietly();
-
-                        nlog("Documents - Moving {$document->url} to {$this->option('disk')}");
                     }
                 });
 
@@ -199,8 +197,6 @@ class BackupUpdate extends Command
 
                     if ($backup_bin) {
                         Storage::disk($this->option('disk'))->put($backup->filename, $backup_bin);
-
-                        nlog("Backups - Moving {$backup->filename} to {$this->option('disk')}");
                     }
                 });
     }

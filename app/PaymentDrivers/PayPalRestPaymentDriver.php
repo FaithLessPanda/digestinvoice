@@ -5,221 +5,64 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\PaymentDrivers;
 
-use Carbon\Carbon;
-use Omnipay\Omnipay;
 use App\Models\Invoice;
 use App\Models\SystemLog;
 use App\Models\GatewayType;
-use App\Models\PaymentType;
+use Illuminate\Support\Str;
 use App\Jobs\Util\SystemLogger;
 use App\Utils\Traits\MakesHash;
 use App\Exceptions\PaymentFailed;
-use Illuminate\Support\Facades\Http;
+use App\Models\ClientGatewayToken;
+use App\Models\PaymentHash;
+use App\PaymentDrivers\PayPal\PayPalBasePaymentDriver;
 
-class PayPalRestPaymentDriver extends BaseDriver
+class PayPalRestPaymentDriver extends PayPalBasePaymentDriver
 {
     use MakesHash;
 
-    public $token_billing = false;
-
-    public $can_authorise_credit_card = false;
-
-    private $omnipay_gateway;
-
-    private float $fee = 0;
-
     public const SYSTEM_LOG_TYPE = SystemLog::TYPE_PAYPAL;
-
-    private string $api_endpoint_url = '';
-
-    private string $paypal_payment_method = '';
-
-    private ?int $gateway_type_id = null;
-
-    protected mixed $access_token = null;
-
-    protected ?Carbon $token_expiry = null;
-
-    private array $funding_options = [
-        3 => 'paypal',
-        1 => 'card',
-        25 => 'venmo',
-        // 9 => 'sepa',
-        // 12 => 'bancontact',
-        // 17 => 'eps',
-        // 15 => 'giropay',
-        // 13 => 'ideal',
-        // 26 => 'mercadopago',
-        // 27 => 'mybank',
-        28 => 'paylater',
-        // 16 => 'p24',
-        // 7 => 'sofort'
-    ];
-
-
-    public function gatewayTypes()
-    {
-
-        $funding_options = [];
-
-        foreach ($this->company_gateway->fees_and_limits as $key => $value) {
-            if ($value->is_enabled) {
-                $funding_options[] = $key;
-            }
-        }
-
-        return $funding_options;
-
-    }
-
-    public function init()
-    {
-        // $this->omnipay_gateway = Omnipay::create(
-        //     $this->company_gateway->gateway->provider
-        // );
-
-        // $this->omnipay_gateway->initialize((array) $this->company_gateway->getConfig());
-        $this->api_endpoint_url = $this->company_gateway->getConfigField('testMode') ? 'https://api-m.sandbox.paypal.com' : 'https://api-m.paypal.com';
-
-        $secret = $this->company_gateway->getConfigField('secret');
-        $client_id = $this->company_gateway->getConfigField('clientId');
-
-        if($this->access_token && $this->token_expiry && $this->token_expiry->isFuture()) {
-            return $this;
-        }
-
-        $response = Http::withBasicAuth($client_id, $secret)
-                                    ->withHeaders(['Content-Type' => 'application/x-www-form-urlencoded'])
-                                    ->withQueryParameters(['grant_type' => 'client_credentials'])
-                                    ->post("{$this->api_endpoint_url}/v1/oauth2/token");
-
-        if($response->successful()) {
-            $this->access_token = $response->json()['access_token'];
-            $this->token_expiry = now()->addSeconds($response->json()['expires_in'] - 60);
-        } else {
-            throw new PaymentFailed('Unable to gain access token from Paypal. Check your configuration', 401);
-        }
-
-        return $this;
-
-    }
-
-    private function getPaymentMethod($gateway_type_id): int
-    {
-        $method = PaymentType::PAYPAL;
-
-        match($gateway_type_id) {
-            "1" => $method = PaymentType::CREDIT_CARD_OTHER,
-            "3" => $method = PaymentType::PAYPAL,
-            "25" => $method = PaymentType::VENMO,
-            "28" => $method = PaymentType::PAY_LATER,
-        };
-
-        return $method;
-    }
-
-    public function setPaymentMethod($payment_method_id): self
-    {
-        if(!$payment_method_id) {
-            return $this;
-        }
-
-        $this->gateway_type_id = $payment_method_id;
-
-        $this->paypal_payment_method = $this->funding_options[$payment_method_id];
-
-
-        return $this;
-    }
-
-    public function authorizeView($payment_method)
-    {
-        // PayPal doesn't support direct authorization.
-
-        return $this;
-    }
-
-    public function authorizeResponse($request)
-    {
-        // PayPal doesn't support direct authorization.
-
-        return $this;
-    }
 
     public function processPaymentView($data)
     {
-        $this->init();
+        $data = $this->processPaymentViewData($data);
 
-        $data['gateway'] = $this;
-
-        $this->payment_hash->data = array_merge((array) $this->payment_hash->data, ['amount' => $data['total']['amount_with_fee']]);
-        $this->payment_hash->save();
-
-        $data['client_id'] = $this->company_gateway->getConfigField('clientId');
-        $data['token'] = $this->getClientToken();
-        $data['order_id'] = $this->createOrder($data);
-        $data['funding_source'] = $this->paypal_payment_method;
-        $data['gateway_type_id'] = $this->gateway_type_id;
-        $data['currency'] = $this->client->currency()->code;
-
-        return render('gateways.paypal.pay', $data);
-
-    }
-
-    private function getFundingOptions(): string
-    {
-
-        $enums = [
-            3 => 'paypal',
-            1 => 'card',
-            25 => 'venmo',
-            // 9 => 'sepa',
-            // 12 => 'bancontact',
-            // 17 => 'eps',
-            // 15 => 'giropay',
-            // 13 => 'ideal',
-            // 26 => 'mercadopago',
-            // 27 => 'mybank',
-            // 28 => 'paylater',
-            // 16 => 'p24',
-            // 7 => 'sofort'
-        ];
-
-        $funding_options = '';
-
-        foreach($this->company_gateway->fees_and_limits as $key => $value) {
-
-            if($value->is_enabled) {
-
-                $funding_options .= $enums[$key].',';
-
-            }
-
+        if ($this->gateway_type_id == 29) {
+            return render('gateways.paypal.ppcp.card', $data);
+        } else {
+            return render('gateways.paypal.pay', $data);
         }
-
-        return rtrim($funding_options, ',');
-
     }
 
+    /**
+     * processPaymentResponse
+     *
+     * @param  mixed $request
+     */
     public function processPaymentResponse($request)
     {
-
+        nlog("response");
         $this->init();
+        $r = false;
 
         $request['gateway_response'] = str_replace("Error: ", "", $request['gateway_response']);
         $response = json_decode($request['gateway_response'], true);
 
-        //capture
-        $orderID = $response['orderID'];
+        if ($request->has('token') && strlen($request->input('token')) > 2) {
+            return $this->processTokenPayment($request, $response);
+        }
 
-        if($this->company_gateway->require_shipping_address) {
+        //capture
+
+        $orderID = $response['orderID'] ?? $this->payment_hash->data->orderID;
+
+        if ($this->company_gateway->require_shipping_address) {
 
             $shipping_data =
             [[
@@ -239,35 +82,42 @@ class PayPalRestPaymentDriver extends BaseDriver
 
         }
 
-        $r = $this->gatewayRequest("/v2/checkout/orders/{$orderID}/capture", 'post', ['body' => '']);
+        try {
+
+            $r = $this->gatewayRequest("/v2/checkout/orders/{$orderID}/capture", 'post', ['body' => '']);
+
+            if ($r->status() == 422) {
+                //handle conditions where the client may need to try again.
+
+                $r = $this->handleDuplicateInvoiceId($orderID);
+
+
+            }
+
+        } catch (\Exception $e) {
+
+            //Rescue for duplicate invoice_id
+            if (stripos($e->getMessage(), 'DUPLICATE_INVOICE_ID') !== false) {
+
+
+                $r = $this->handleDuplicateInvoiceId($orderID);
+
+            }
+
+        }
 
         $response = $r;
 
-        if(isset($response['status']) && $response['status'] == 'COMPLETED' && isset($response['purchase_units'])) {
+        nlog("Process response =>");
+        nlog($response->json());
 
-            $data = [
-                'payment_type' => $this->getPaymentMethod($request->gateway_type_id),
-                'amount' => $response['purchase_units'][0]['payments']['captures'][0]['amount']['value'],
-                'transaction_reference' => $response['purchase_units'][0]['payments']['captures'][0]['id'],
-                'gateway_type_id' => GatewayType::PAYPAL,
-            ];
+        if (isset($response['status']) && $response['status'] == 'COMPLETED' && isset($response['purchase_units'])) {
 
-            $payment = $this->createPayment($data, \App\Models\Payment::STATUS_COMPLETED);
-
-            SystemLogger::dispatch(
-                ['response' => $response, 'data' => $data],
-                SystemLog::CATEGORY_GATEWAY_RESPONSE,
-                SystemLog::EVENT_GATEWAY_SUCCESS,
-                SystemLog::TYPE_PAYPAL,
-                $this->client,
-                $this->client->company,
-            );
-
-            return redirect()->route('client.payments.show', ['payment' => $this->encodePrimaryKey($payment->id)]);
+            return $this->createNinjaPayment($request, $response);
 
         } else {
 
-            if(isset($response['headers']) ?? false) {
+            if (isset($response['headers']) ?? false) {
                 unset($response['headers']);
             }
 
@@ -282,25 +132,13 @@ class PayPalRestPaymentDriver extends BaseDriver
 
             $message = $response['body']['details'][0]['description'] ?? 'Payment failed. Please try again.';
 
-            throw new PaymentFailed($message, 400);
+            return response()->json(['message' => $message], 400);
+
         }
 
     }
 
-    private function getClientToken(): string
-    {
-
-        $r = $this->gatewayRequest('/v1/identity/generate-token', 'post', ['body' => '']);
-
-        if($r->successful()) {
-            return $r->json()['client_token'];
-        }
-
-        throw new PaymentFailed('Unable to gain client token from Paypal. Check your configuration', 401);
-
-    }
-
-    private function createOrder(array $data): string
+    public function createOrder(array $data): string
     {
 
         $_invoice = collect($this->payment_hash->data->invoices)->first();
@@ -312,38 +150,13 @@ class PayPalRestPaymentDriver extends BaseDriver
         })->implode("\n");
 
         $order = [
-
                 "intent" => "CAPTURE",
-                "payment_source" => [
-                    "paypal" => [
-
-                        "name" => [
-                            "given_name" => $this->client->present()->first_name(),
-                            "surname" => $this->client->present()->last_name(),
-                        ],
-                        "email_address" => $this->client->present()->email(),
-                        "address" => [
-                            "address_line_1" => $this->client->address1,
-                            "address_line_2" => $this->client->address2,
-                            "admin_area_2" => $this->client->city,
-                            "admin_area_1" => $this->client->state,
-                            "postal_code" => $this->client->postal_code,
-                            "country_code" => $this->client->country->iso_3166_2,
-                        ],
-                        "experience_context" => [
-                            "user_action" => "PAY_NOW"
-                        ],
-                    ],
-                ],
+                "payment_source" => $this->getPaymentSource(),
                 "purchase_units" => [
                     [
                     "custom_id" => $this->payment_hash->hash,
                     "description" => ctrans('texts.invoice_number') . '# ' . $invoice->number,
                     "invoice_id" => $invoice->number,
-                    "payment_instruction" => [
-                        "disbursement_mode" => "INSTANT",
-                    ],
-                    $this->getShippingAddress(),
                     "amount" => [
                         "value" => (string) $data['amount_with_fee'],
                         "currency_code" => $this->client->currency()->code,
@@ -369,156 +182,266 @@ class PayPalRestPaymentDriver extends BaseDriver
                 ]
             ];
 
-
-        if($shipping = $this->getShippingAddress()) {
+        if ($shipping = $this->getShippingAddress()) {
             $order['purchase_units'][0]["shipping"] = $shipping;
+        }
+
+        if (isset($data['payment_source'])) {
+            $order['payment_source'] = $data['payment_source'];
+        }
+
+        if (isset($data["payer"])) {
+            $order['payer'] = $data["payer"];
         }
 
         $r = $this->gatewayRequest('/v2/checkout/orders', 'post', $order);
 
-        // nlog($r->json());
-
-        return $r->json()['id'];
-
+        nlog($r->json());
+        $response = $r->json();
 
 
-        // $_invoice = collect($this->payment_hash->data->invoices)->first();
+        if ($r->status() == 422) {
+            //handle conditions where the client may need to try again.
 
-        // $invoice = Invoice::withTrashed()->find($this->decodePrimaryKey($_invoice->invoice_id));
+            $_invoice = collect($this->payment_hash->data->invoices)->first();
+            $invoice = Invoice::withTrashed()->find($this->decodePrimaryKey($_invoice->invoice_id));
+            $new_invoice_number = $invoice->number."_".Str::random(5);
 
-        // $order = [
-        //   "intent" => "CAPTURE",
-        //   "payer" => [
-        //     "name" => [
-        //         "given_name" => $this->client->present()->first_name(),
-        //         "surname" => $this->client->present()->last_name(),
-        //     ],
-        //     "email_address" => $this->client->present()->email(),
-        //     "address" => [
-        //         "address_line_1" => $this->client->address1,
-        //         "address_line_2" => $this->client->address2,
-        //         "admin_area_1" => $this->client->city,
-        //         "admin_area_2" => $this->client->state,
-        //         "postal_code" => $this->client->postal_code,
-        //         "country_code" => $this->client->country->iso_3166_2,
-        //     ]
-        //     ],
-        //   "purchase_units" => [
-        //         [
-        //     "description" => ctrans('texts.invoice_number').'# '.$invoice->number,
-        //     "invoice_id" => $invoice->number,
-        //     "amount" => [
-        //         "value" => (string)$data['amount_with_fee'],
-        //         "currency_code" => $this->client->currency()->code,
-        //         "breakdown" => [
-        //             "item_total" => [
-        //                 "currency_code" => $this->client->currency()->code,
-        //                 "value" => (string)$data['amount_with_fee']
-        //             ]
-        //         ]
-        //     ],
-        //     "items" => [
-        //         [
-        //             "name" => ctrans('texts.invoice_number').'# '.$invoice->number,
-        //             "quantity" => "1",
-        //             "unit_amount" => [
-        //                 "currency_code" => $this->client->currency()->code,
-        //                 "value" => (string)$data['amount_with_fee']
-        //             ],
-        //         ],
-        //     ],
-        //   ]
-        //   ]
-        // ];
+            $order['purchase_units'][0]['invoice_id'] = $new_invoice_number;
 
-        // $r = $this->gatewayRequest('/v2/checkout/orders', 'post', $order);
+            $r = $this->gatewayRequest('/v2/checkout/orders', 'post', $order);
 
-        // return $r->json()['id'];
+            nlog($r->json());
+            $response = $r->json();
+
+        }
+
+        if (!isset($response['id'])) {
+            $this->handleProcessingFailure($response);
+        }
+
+        $this->payment_hash->withData("orderID", $response['id']);
+
+        return $response['id'];
 
     }
 
-    private function getShippingAddress(): ?array
-    {
-        return $this->company_gateway->require_shipping_address ?
-        [
-            "address" =>
-                [
-                    "address_line_1" => strlen($this->client->shipping_address1) > 1 ? $this->client->shipping_address1 : $this->client->address1,
-                    "address_line_2" => $this->client->shipping_address2,
-                    "admin_area_2" => strlen($this->client->shipping_city) > 1 ? $this->client->shipping_city : $this->client->city,
-                    "admin_area_1" => strlen($this->client->shipping_state) > 1 ? $this->client->shipping_state : $this->client->state,
-                    "postal_code" => strlen($this->client->shipping_postal_code) > 1 ? $this->client->shipping_postal_code : $this->client->postal_code,
-                    "country_code" => $this->client->present()->shipping_country_code(),
-                ],
-        ]
 
-        : null;
-
-    }
 
     /**
-     * Generates the gateway request
+     * processTokenPayment
      *
-     * @param  string $uri
-     * @param  string $verb
-     * @param  array $data
-     * @param  ?array $headers
-     * @return \Illuminate\Http\Client\Response
+     * With PayPal and token payments, the order needs to be
+     * deleted and then created with the payment source that
+     * has been selected by the client.
+     *
+     * This method handle the deletion of the current paypal order,
+     * and the automatic payment of the order with the selected payment source.
+     *
+     * ** Do not move to BasePPDriver **
+     * @param  mixed $request
+     * @param  array $response
      */
-    public function gatewayRequest(string $uri, string $verb, array $data, ?array $headers = [])
+    public function processTokenPayment($request, array $response)
+    {
+
+        /** @var \App\Models\ClientGatewayToken $cgt */
+        $cgt = ClientGatewayToken::where('client_id', $this->client->id)
+                                 ->where('token', $request['token'])
+                                 ->firstOrFail();
+
+        $orderId = $response['orderID'];
+        $r = $this->gatewayRequest("/v1/checkout/orders/{$orderId}/", 'delete', ['body' => '']);
+
+        nlog($r->body());
+
+        $data["payer"] = [
+                    "name" => [
+                        "given_name" => $this->client->present()->first_name(),
+                        "surname" => $this->client->present()->last_name()
+                    ],
+                    "email_address" => $this->client->present()->email(),
+                ];
+        $data['amount_with_fee'] = $this->payment_hash->data->amount_with_fee;
+        $data["payment_source"] = [
+            "card" => [
+                "vault_id" => $cgt->token,
+                "stored_credential" => [
+                    "payment_initiator" => "MERCHANT",
+                    "payment_type" => "UNSCHEDULED",
+                    "usage" => "SUBSEQUENT",
+                ],
+            ],
+        ];
+
+        $orderId = $this->createOrder($data);
+
+        try {
+
+            $r = $this->gatewayRequest("/v2/checkout/orders/{$orderId}", 'get', ['body' => '']);
+
+            if ($r->status() == 422) {
+                //handle conditions where the client may need to try again.
+                nlog("hit 422");
+                $r = $this->handleDuplicateInvoiceId($orderId);
+
+
+            }
+
+        } catch (\Exception $e) {
+
+            //Rescue for duplicate invoice_id
+            if (stripos($e->getMessage(), 'DUPLICATE_INVOICE_ID') !== false) {
+
+
+                nlog("hit 422 in exception");
+
+                $r = $this->handleDuplicateInvoiceId($orderId);
+
+            }
+
+        }
+
+        $response = $r->json();
+
+        if (isset($response['purchase_units'][0]['payments']['captures'][0]['status']) && $response['purchase_units'][0]['payments']['captures'][0]['status'] == 'COMPLETED') {
+            $data = [
+                'payment_type' => $this->getPaymentMethod($request->gateway_type_id),
+                'amount' => $response['purchase_units'][0]['payments']['captures'][0]['amount']['value'],
+                'transaction_reference' => $response['purchase_units'][0]['payments']['captures'][0]['id'],
+                'gateway_type_id' => $this->gateway_type_id,
+            ];
+
+            $payment = $this->createPayment($data, \App\Models\Payment::STATUS_COMPLETED);
+
+            SystemLogger::dispatch(
+                ['response' => $response, 'data' => $data],
+                SystemLog::CATEGORY_GATEWAY_RESPONSE,
+                SystemLog::EVENT_GATEWAY_SUCCESS,
+                SystemLog::TYPE_PAYPAL,
+                $this->client,
+                $this->client->company,
+            );
+
+            return redirect()->route('client.payments.show', ['payment' => $this->encodePrimaryKey($payment->id)]);
+
+        }
+
+        return response()->json(['message' => 'Error processing token payment'], 400);
+
+    }
+
+    public function tokenBilling(ClientGatewayToken $cgt, PaymentHash $payment_hash)
+    {
+        $data = [];
+        $this->payment_hash = $payment_hash;
+
+        $data['payer'] = [
+                    "name" => [
+                        "given_name" => $this->client->present()->first_name(),
+                        "surname" => $this->client->present()->last_name()
+                    ],
+                    "email_address" => $this->client->present()->email(),
+                ];
+
+        $data['amount_with_fee'] = $this->payment_hash->data->amount_with_fee;
+        $data["payment_source"] = [
+            "card" => [
+                "vault_id" => $cgt->token,
+                "stored_credential" => [
+                    "payment_initiator" => "MERCHANT",
+                    "payment_type" => "UNSCHEDULED",
+                    "usage" => "SUBSEQUENT",
+                ],
+            ],
+        ];
+
+        $orderId = $this->createOrder($data);
+
+        $r = false;
+
+        try {
+
+            $r = $this->gatewayRequest("/v2/checkout/orders/{$orderId}", 'get', ['body' => '']);
+
+            if ($r->status() == 422) {
+                //handle conditions where the client may need to try again.
+
+                $r = $this->handleDuplicateInvoiceId($orderId);
+
+            }
+
+        } catch (\Exception $e) {
+
+            //Rescue for duplicate invoice_id
+            if (stripos($e->getMessage(), 'DUPLICATE_INVOICE_ID') !== false) {
+
+                $r = $this->handleDuplicateInvoiceId($orderId);
+
+            }
+
+        }
+
+        $response = $r->json();
+
+        if (isset($response['purchase_units'][0]['payments']['captures'][0]['status']) && $response['purchase_units'][0]['payments']['captures'][0]['status'] == 'COMPLETED') {
+
+            $data = [
+                'payment_type' => $this->getPaymentMethod((string)$cgt->gateway_type_id),
+                'amount' => $response['purchase_units'][0]['payments']['captures'][0]['amount']['value'],
+                'transaction_reference' => $response['purchase_units'][0]['payments']['captures'][0]['id'],
+                'gateway_type_id' => $this->gateway_type_id,
+            ];
+
+            $payment = $this->createPayment($data, \App\Models\Payment::STATUS_COMPLETED);
+
+            SystemLogger::dispatch(
+                ['response' => $response, 'data' => $data],
+                SystemLog::CATEGORY_GATEWAY_RESPONSE,
+                SystemLog::EVENT_GATEWAY_SUCCESS,
+                SystemLog::TYPE_PAYPAL_PPCP,
+                $this->client,
+                $this->client->company,
+            );
+
+            return $payment;
+        }
+
+        $this->processInternallyFailedPayment($this, new \Exception('Auto billing failed.', 400));
+
+        SystemLogger::dispatch($response, SystemLog::CATEGORY_GATEWAY_RESPONSE, SystemLog::EVENT_GATEWAY_FAILURE, SystemLog::TYPE_PAYPAL, $this->client, $this->client->company);
+
+    }
+
+    public function processPaymentViewData(array $data): array
     {
         $this->init();
 
-        $r = Http::withToken($this->access_token)
-                ->withHeaders($this->getHeaders($headers))
-                ->{$verb}("{$this->api_endpoint_url}{$uri}", $data);
+        $data['gateway'] = $this;
 
-        if($r->successful()) {
-            return $r;
+        $this->payment_hash->data = array_merge((array) $this->payment_hash->data, ['amount' => $data['total']['amount_with_fee']]);
+        $this->payment_hash->save();
+
+        $data['client_id'] = $this->company_gateway->getConfigField('clientId');
+        $data['token'] = $this->getClientToken();
+        $data['order_id'] = $this->createOrder($data);
+        $data['funding_source'] = $this->paypal_payment_method;
+        $data['gateway_type_id'] = $this->gateway_type_id;
+        $data['currency'] = $this->client->currency()->code;
+        $data['guid'] = $this->risk_guid;
+        $data['identifier'] = "s:INN_ACDC_CHCK";
+        $data['pp_client_reference'] = $this->getClientHash();
+        $data['invoice_hash'] = $this->payment_hash->fee_invoice->hashed_id;
+
+        return $data;
+    }
+
+    public function livewirePaymentView(array $data): string
+    {
+        if ($this->gateway_type_id == 29) {
+            return 'gateways.paypal.ppcp.card_livewire';
         }
 
-        SystemLogger::dispatch(
-            ['response' => $r->body()],
-            SystemLog::CATEGORY_GATEWAY_RESPONSE,
-            SystemLog::EVENT_GATEWAY_FAILURE,
-            SystemLog::TYPE_PAYPAL,
-            $this->client,
-            $this->client->company,
-        );
-
-        throw new PaymentFailed("Gateway failure - {$r->body()}", 401);
-
+        return 'gateways.paypal.pay_livewire';
     }
-
-    private function getHeaders(array $headers = []): array
-    {
-        return array_merge([
-            'Accept' => 'application/json',
-            'Content-type' => 'application/json',
-            'Accept-Language' => 'en_US',
-        ], $headers);
-    }
-
-    private function feeCalc($invoice, $invoice_total)
-    {
-        $invoice->service()->removeUnpaidGatewayFees();
-        $invoice = $invoice->fresh();
-
-        $balance = floatval($invoice->balance);
-
-        $_updated_invoice = $invoice->service()->addGatewayFee($this->company_gateway, GatewayType::PAYPAL, $invoice_total)->save();
-
-        if (floatval($_updated_invoice->balance) > $balance) {
-            $fee = floatval($_updated_invoice->balance) - $balance;
-
-            $this->payment_hash->fee_total = $fee;
-            $this->payment_hash->save();
-
-            return $fee;
-        }
-
-        return 0;
-    }
-
-
 }

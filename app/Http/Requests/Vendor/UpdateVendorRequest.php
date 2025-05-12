@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -62,17 +62,17 @@ class UpdateVendorRequest extends Request
         $rules['currency_id'] = 'bail|sometimes|exists:currencies,id';
 
         if ($this->file('documents') && is_array($this->file('documents'))) {
-            $rules['documents.*'] = $this->file_validation;
+            $rules['documents.*'] = $this->fileValidation();
         } elseif ($this->file('documents')) {
-            $rules['documents'] = $this->file_validation;
-        }else {
+            $rules['documents'] = $this->fileValidation();
+        } else {
             $rules['documents'] = 'bail|sometimes|array';
         }
 
         if ($this->file('file') && is_array($this->file('file'))) {
-            $rules['file.*'] = $this->file_validation;
+            $rules['file.*'] = $this->fileValidation();
         } elseif ($this->file('file')) {
-            $rules['file'] = $this->file_validation;
+            $rules['file'] = $this->fileValidation();
         }
 
         $rules['language_id'] = 'bail|nullable|sometimes|exists:languages,id';
@@ -100,6 +100,12 @@ class UpdateVendorRequest extends Request
 
         if (array_key_exists('country_id', $input) && is_null($input['country_id'])) {
             unset($input['country_id']);
+        } elseif (!$this->vendor->country_id) {
+
+            /** @var \App\Models\User $user */
+            $user = auth()->user();
+
+            $input['country_id'] = $user->company()->country()->id;
         }
 
         $input = $this->decodePrimaryKeys($input);

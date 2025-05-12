@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -40,7 +40,7 @@ class Webhook
             $error_details = $e->error_details;
             nlog($error_details);
 
-            $http_status_code = isset($e->http_metadata) ? $e->http_metadata->getStatusCode() : null;
+            $http_status_code = isset($e->http_metadata) ? $e->http_metadata->getStatusCode() : null; //@phpstan-ignore-line
         } catch (CheckoutAuthorizationException $e) {
             // Bad Invalid authorization
         }

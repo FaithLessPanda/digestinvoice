@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -103,7 +103,7 @@ class AuthorizeCustomer
             } else {
                 // nlog("creating client");
 
-                $first_payment_profile = $profile['payment_profiles'][0];
+                $first_payment_profile = &$profile['payment_profiles'][0];
 
                 if (! $first_payment_profile) {
                     continue;
@@ -115,7 +115,7 @@ class AuthorizeCustomer
                 $client->city = $billTo->getCity();
                 $client->state = $billTo->getState();
                 $client->postal_code = $billTo->getZip();
-                $client->country_id = $billTo->getCountry() ? $this->getCountryCode($billTo->getCountry()) : $company->settings->country_id;
+                $client->country_id = $billTo->getCountry() && strlen($billTo->getCountry()) <= 3 ? $this->getCountryCode($billTo->getCountry()) : $company->settings->country_id;
                 $client->save();
 
                 $client_contact = ClientContactFactory::create($company->id, $user->id);
@@ -161,11 +161,13 @@ class AuthorizeCustomer
 
     private function getCountryCode($country_code)
     {
-        $countries = Cache::get('countries');
 
-        $country = $countries->filter(function ($item) use ($country_code) {
+        /** @var \Illuminate\Support\Collection<\App\Models\Country> */
+        $countries = app('countries');
+
+        $country = $countries->first(function ($item) use ($country_code) {
             return $item->iso_3166_2 == $country_code || $item->iso_3166_3 == $country_code;
-        })->first();
+        });
 
         return (string) $country->id;
     }

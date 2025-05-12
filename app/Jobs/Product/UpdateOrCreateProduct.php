@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -140,6 +140,6 @@ class UpdateOrCreateProduct implements ShouldQueue
     public function failed($exception = null)
     {
         info('update create failed with = ');
-        info(print_r($exception->getMessage(), 1));
+        nlog($exception->getMessage());
     }
 }

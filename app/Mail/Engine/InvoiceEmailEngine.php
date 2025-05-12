@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -131,12 +131,12 @@ class InvoiceEmailEngine extends BaseEmailEngine
         if ($this->client->getSetting('pdf_email_attachment') !== false && $this->invoice->company->account->hasFeature(Account::FEATURE_PDF_ATTACHMENT)) {
             $pdf = ((new CreateRawPdf($this->invitation))->handle());
 
+            if ($this->client->getSetting('embed_documents') && ($this->invoice->documents()->where('is_public', true)->count() > 0 || $this->invoice->company->documents()->where('is_public', true)->count() > 0)) {
+                $pdf = $this->invoice->documentMerge($pdf);
+            }
+
             $this->setAttachments([['file' => base64_encode($pdf), 'name' => $this->invoice->numberFormatter().'.pdf']]);
         }
-
-        // $hash = Str::uuid();
-        // $url = \Illuminate\Support\Facades\URL::temporarySignedRoute('protected_download', now()->addHour(), ['hash' => $hash]);
-        // Cache::put($hash, $url, now()->addHour());
 
         //attach third party documents
         if ($this->client->getSetting('document_email_attachment') !== false && $this->invoice->company->account->hasFeature(Account::FEATURE_DOCUMENTS)) {
@@ -218,7 +218,7 @@ class InvoiceEmailEngine extends BaseEmailEngine
                                            $task->documents()->where('is_public', true)->cursor()->each(function ($document) {
                                                if ($document->size > $this->max_attachment_size) {
 
-                                                   $hash = Str::random(64);
+                                                   $hash = Str::random(64); //allows document has to persist
                                                    Cache::put($hash, ['db' => $this->invoice->company->db, 'doc_hash' => $document->hash], now()->addDays(7));
 
                                                    $this->setAttachmentLinks(["<a class='doc_links' href='" . URL::signedRoute('documents.hashed_download', ['hash' => $hash]) ."'>". $document->name ."</a>"]);

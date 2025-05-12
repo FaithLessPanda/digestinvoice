@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -328,7 +328,13 @@ trait GeneratesCounter
         $counter = $expense->company->settings->expense_number_counter;
         $setting_entity = $expense->company->settings->expense_number_counter;
 
-        $expense_number = $this->checkEntityNumber(Expense::class, $expense, $counter, $expense->company->settings->counter_padding, $expense->company->settings->expense_number_pattern);
+        $pattern = $expense->company->settings->expense_number_pattern;
+        
+        if (strlen($pattern) > 1 && (stripos($pattern, 'counter') === false)) {
+            $pattern = $pattern.'{$counter}';
+        }
+
+        $expense_number = $this->checkEntityNumber(Expense::class, $expense, $counter, $expense->company->settings->counter_padding, $pattern);
 
         $this->incrementCounter($expense->company, 'expense_number_counter');
 
@@ -411,7 +417,7 @@ trait GeneratesCounter
      *
      * @param      string $pattern
      * @param      string $prefix
-     * @return     string The padded and prefixed entity number
+     * @return     string The padded, prefixed and unique entity number
      */
     private function checkEntityNumber($class, $entity, $counter, $padding, $pattern, $prefix = ''): string
     {
@@ -419,11 +425,7 @@ trait GeneratesCounter
         $check_counter = 1;
 
         do {
-            $number = $this->padCounter($counter, $padding);
-
-            $number = $this->applyNumberPattern($entity, $number, $pattern);
-
-            $number = $this->prefixCounter($number, $prefix);
+            $number = $this->getFormattedEntityNumber($entity, $counter, $padding, $pattern, $prefix);
 
             $check = $class::where('company_id', $entity->company_id)->where('number', $number)->withTrashed()->exists();
 
@@ -440,6 +442,26 @@ trait GeneratesCounter
         $this->update_counter = $counter--;
 
         return $number;
+    }
+
+    /**
+     * Formats the entity number according to pattern, prefix and padding.
+     *
+     * @param mixed $entity The entity ie App\Models\Client, Invoice, Quote etc
+     * @param int $counter The counter
+     * @param int $padding The padding
+     * @param      string $pattern
+     * @param      string $prefix
+     *
+     * @return     string The padded and prefixed entity number
+     */
+    public function getFormattedEntityNumber($entity, $counter, $padding, $pattern, $prefix = ''): string
+    {
+        $number = $this->padCounter($counter, $padding);
+
+        $number = $this->applyNumberPattern($entity, $number, $pattern);
+
+        return $this->prefixCounter($number, $prefix);
     }
 
     /*Check if a number is available for use. */
@@ -512,17 +534,15 @@ trait GeneratesCounter
         $reset_counter_frequency = (int) $client->getSetting('reset_counter_frequency_id');
         $settings_entity = $client->getSettingEntity('reset_counter_frequency_id');
         $settings = $settings_entity->settings;
-
+        
         if ($reset_counter_frequency == 0) {
+            
             if ($client->getSetting('reset_counter_date')) {
-                // $settings = $client->company->settings;
                 $settings->reset_counter_date = "";
                 $settings_entity->settings = $settings;
                 $settings_entity->saveQuietly();
-                // $client->company->settings = $settings;
-                // $client->company->save();
             }
-
+            
             return;
         }
 

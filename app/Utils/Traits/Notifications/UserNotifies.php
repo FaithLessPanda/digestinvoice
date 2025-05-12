@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -163,5 +163,10 @@ trait UserNotifies
         }
 
         return count(array_intersect($required_notification, $company_user->notifications->email)) >= 1;
+    }
+
+    public function findEntityAssignedNotification(\App\Models\CompanyUser $company_user, string $entity)
+    {
+        return count(array_intersect(["{$entity}_assigned"], $company_user->notifications->email)) >= 1;
     }
 }

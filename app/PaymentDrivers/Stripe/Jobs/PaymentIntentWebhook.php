@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -28,6 +28,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Modules\Admin\Jobs\Stripe\CampaignCharge;
 
 class PaymentIntentWebhook implements ShouldQueue
 {
@@ -59,21 +60,38 @@ class PaymentIntentWebhook implements ShouldQueue
     public function handle()
     {
         MultiDB::findAndSetDbByCompanyKey($this->company_key);
-
+        
         $company = Company::query()->where('company_key', $this->company_key)->first();
 
         foreach ($this->stripe_request as $transaction) {
-            if (array_key_exists('payment_intent', $transaction)) {
-                $payment = Payment::query()
-                    ->where('company_id', $company->id)
-                    ->where('transaction_reference', $transaction['payment_intent'])
-                    ->first();
-            } else {
-                $payment = Payment::query()
-                   ->where('company_id', $company->id)
-                   ->where('transaction_reference', $transaction['id'])
-                   ->first();
+
+            $ninja_promo = data_get($transaction, 'charges.data.0.metadata.product', false);
+
+            if ($ninja_promo && class_exists(\Modules\Admin\Jobs\Stripe\CampaignCharge::class)) {
+                \Modules\Admin\Jobs\Stripe\CampaignCharge::dispatch(data_get($transaction, 'charges.data.0'));
+                continue;
             }
+
+            $payment = Payment::query()
+                ->where('company_id', $company->id)
+                ->where(function ($query) use ($transaction) {
+
+                    if (isset($transaction['payment_intent'])) {
+                        $query->where('transaction_reference', $transaction['payment_intent']);
+                    }
+
+                    if (isset($transaction['payment_intent']) && isset($transaction['id'])) {
+                        $query->orWhere('transaction_reference', $transaction['id']);
+                    }
+
+                    if (!isset($transaction['payment_intent']) && isset($transaction['id'])) {
+                        $query->where('transaction_reference', $transaction['id']);
+                    }
+
+                })
+                ->first();
+
+
 
             if ($payment) {
                 $payment->status_id = Payment::STATUS_COMPLETED;
@@ -89,6 +107,11 @@ class PaymentIntentWebhook implements ShouldQueue
         }
 
         $company_gateway = CompanyGateway::query()->find($this->company_gateway_id);
+
+        if (!$company_gateway) {
+            return;
+        }
+
         $stripe_driver = $company_gateway->driver()->init();
 
         $charge_id = false;
@@ -263,7 +286,7 @@ class PaymentIntentWebhook implements ShouldQueue
             }
 
             $driver->storeGatewayToken($data, $additional_data);
-        } catch(\Exception $e) {
+        } catch (\Exception $e) {
             nlog("failed to import payment methods");
             nlog($e->getMessage());
         }
@@ -297,5 +320,14 @@ class PaymentIntentWebhook implements ShouldQueue
             $client,
             $client->company,
         );
+    }
+
+    public function failed($exception = null)
+    {
+        if ($exception) {
+            nlog($exception->getMessage());
+        }
+
+        config(['queue.failed.driver' => null]);
     }
 }

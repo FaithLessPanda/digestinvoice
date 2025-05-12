@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -20,7 +20,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int|null $company_id
  * @property int|null $user_id
  * @property int|null $event_id
- * @property int $is_deleted
+ * @property bool $is_deleted
  * @property string $target_url
  * @property string $format
  * @property int|null $created_at
@@ -174,12 +174,19 @@ class Webhook extends BaseModel
 
     public const EVENT_SENT_PURCHASE_ORDER = 63;
 
+    public const EVENT_REMIND_QUOTE = 64;
+
+    public const EVENT_ACCEPTED_PURCHASE_ORDER = 65;
+
     public static $valid_events = [
+        self::EVENT_ACCEPTED_PURCHASE_ORDER,
+        self::EVENT_REMIND_QUOTE,
         self::EVENT_CREATE_PURCHASE_ORDER,
         self::EVENT_UPDATE_PURCHASE_ORDER,
         self::EVENT_DELETE_PURCHASE_ORDER,
         self::EVENT_RESTORE_PURCHASE_ORDER,
         self::EVENT_ARCHIVE_PURCHASE_ORDER,
+        self::EVENT_CREATE_PRODUCT,
         self::EVENT_UPDATE_PRODUCT,
         self::EVENT_DELETE_PRODUCT,
         self::EVENT_RESTORE_PRODUCT,

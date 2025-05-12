@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -52,6 +52,8 @@ class CreditExport extends BaseExport
 
         $report = $query->cursor()
                 ->map(function ($credit) {
+
+                    /** @var \App\Models\Credit $credit */
                     $row = $this->buildRow($credit);
                     return $this->processMetaData($row, $credit);
                 })->toArray();
@@ -73,7 +75,7 @@ class CreditExport extends BaseExport
             $clean_row[$key]['value'] = $row[$column_key];
             $clean_row[$key]['identifier'] = $value;
 
-            if(in_array($clean_row[$key]['id'], ['paid_to_date','total_taxes','amount', 'balance', 'partial', 'refunded', 'applied','unit_cost','cost','price'])) {
+            if (in_array($clean_row[$key]['id'], ['paid_to_date','total_taxes','amount', 'balance', 'partial', 'refunded', 'applied','unit_cost','cost','price'])) {
                 $clean_row[$key]['display_value'] = Number::formatMoney($row[$column_key], $resource->client);
             } else {
                 $clean_row[$key]['display_value'] = $row[$column_key];
@@ -102,13 +104,30 @@ class CreditExport extends BaseExport
         $query = Credit::query()
                         ->withTrashed()
                         ->with('client')
+                        ->whereHas('client', function ($q) {
+                            $q->where('is_deleted', false);
+                        })
                         ->where('company_id', $this->company->id)
-                        ->where('is_deleted', 0);
+                        ->where('is_deleted', $this->input['include_deleted'] ?? false);
 
-        $query = $this->addDateRange($query);
+        $query = $this->addDateRange($query, 'credits');
 
-        if($this->input['document_email_attachment'] ?? false) {
+        $clients = &$this->input['client_id'];
+
+        if ($clients) {
+            $query = $this->addClientFilter($query, $clients);
+        }
+
+        if ($this->input['status'] ?? false) {
+            $query = $this->addCreditStatusFilter($query, $this->input['status']);
+        }
+
+        if ($this->input['document_email_attachment'] ?? false) {
             $this->queueDocuments($query);
+        }
+
+        if ($this->input['pdf_email_attachment'] ?? false) {
+            $this->queuePdfs($query);
         }
 
         return $query;
@@ -119,12 +138,14 @@ class CreditExport extends BaseExport
         $query = $this->init();
         //load the CSV document from a string
         $this->csv = Writer::createFromString();
+        \League\Csv\CharsetConverter::addTo($this->csv, 'UTF-8', 'UTF-8');
 
         //insert the header
         $this->csv->insertOne($this->buildHeader());
 
         $query->cursor()
             ->each(function ($credit) {
+                /** @var \App\Models\Credit $credit */
                 $this->csv->insertOne($this->buildRow($credit));
             });
 
@@ -147,19 +168,50 @@ class CreditExport extends BaseExport
                 $entity[$keyval] = $transformed_credit[$credit_key];
             } elseif (isset($transformed_credit[$keyval])) {
                 $entity[$keyval] = $transformed_credit[$keyval];
-            } elseif(isset($transformed_credit[$searched_credit_key])) {
+            } elseif (isset($transformed_credit[$searched_credit_key])) {
                 $entity[$keyval] = $transformed_credit[$searched_credit_key];
             } else {
-
-                // nlog($key);
                 $entity[$key] = $this->decorator->transform($key, $credit);
-                // $entity[$key] = '';
-                // $entity[$keyval] = $this->resolveKey($keyval, $credit, $this->credit_transformer);
             }
 
         }
 
-        return $this->decorateAdvancedFields($credit, $entity);
+        $entity = $this->decorateAdvancedFields($credit, $entity);
+        return $this->convertFloats($entity);
+    }
+
+    public function addCreditStatusFilter($query, $status): Builder
+    {
+
+        $status_parameters = explode(',', $status);
+
+        if (in_array('all', $status_parameters)) {
+            return $query;
+        }
+
+        $credit_filters = [];
+
+        if (in_array('draft', $status_parameters)) {
+            $credit_filters[] = Credit::STATUS_DRAFT;
+        }
+
+        if (in_array('sent', $status_parameters)) {
+            $credit_filters[] = Credit::STATUS_SENT;
+        }
+
+        if (in_array('partial', $status_parameters)) {
+            $credit_filters[] = Credit::STATUS_PARTIAL;
+        }
+
+        if (in_array('applied', $status_parameters)) {
+            $credit_filters[] = Credit::STATUS_APPLIED;
+        }
+
+        if (count($credit_filters) >= 1) {
+            $query->whereIn('status_id', $credit_filters);
+        }
+
+        return $query;
     }
 
     private function decorateAdvancedFields(Credit $credit, array $entity): array
@@ -193,7 +245,7 @@ class CreditExport extends BaseExport
         }
 
         if (in_array('credit.user_id', $this->input['report_keys'])) {
-            $entity['credit.user_id'] = $credit->user ? $credit->user->present()->name() : '';
+            $entity['credit.user_id'] = $credit->user ? $credit->user->present()->name() : ''; //@phpstan-ignore-line
         }
 
         return $entity;

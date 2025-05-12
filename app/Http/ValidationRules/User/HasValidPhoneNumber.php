@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -51,7 +51,7 @@ class HasValidPhoneNumber implements Rule
 
         $twilio = new \Twilio\Rest\Client($sid, $token);
 
-        $country = auth()->user()->account?->companies()?->first()?->country();
+        $country = auth()->user()->account?->companies()?->first()?->country(); //@phpstan-ignore-line
 
         if (!$country || strlen(auth()->user()->phone) < 2) {
             return true;
@@ -71,7 +71,7 @@ class HasValidPhoneNumber implements Rule
             $user->save();
 
             return true;
-        } catch(\Exception $e) {
+        } catch (\Exception $e) {
             return false;
         }
     }

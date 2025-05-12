@@ -65,12 +65,26 @@ class QuoteItemExport extends BaseExport
 
         $query = Quote::query()
                             ->withTrashed()
-                            ->with('client')->where('company_id', $this->company->id)
-                            ->where('is_deleted', 0);
+                            ->whereHas('client', function ($q) {
+                                $q->where('is_deleted', false);
+                            })
+                            ->with('client')->where('company_id', $this->company->id);
 
-        $query = $this->addDateRange($query);
+        if (!$this->input['include_deleted'] ?? false) {
+            $query->where('is_deleted', 0);
+        }
 
-        if($this->input['document_email_attachment'] ?? false) {
+        $query = $this->addDateRange($query, 'quotes');
+
+        $clients = &$this->input['client_id'];
+
+        if ($clients) {
+            $query = $this->addClientFilter($query, $clients);
+        }
+
+        $query = $this->addQuoteStatusFilter($query, $this->input['status'] ?? '');
+
+        if ($this->input['document_email_attachment'] ?? false) {
             $this->queueDocuments($query);
         }
 
@@ -90,9 +104,11 @@ class QuoteItemExport extends BaseExport
 
         $query->cursor()
             ->each(function ($resource) {
+
+                /** @var \App\Models\Quote $resource */
                 $this->iterateItems($resource);
 
-                foreach($this->storage_array as $row) {
+                foreach ($this->storage_array as $row) {
                     $this->storage_item_array[] = $this->processItemMetaData($row, $resource);
                 }
 
@@ -110,6 +126,7 @@ class QuoteItemExport extends BaseExport
 
         //load the CSV document from a string
         $this->csv = Writer::createFromString();
+        \League\Csv\CharsetConverter::addTo($this->csv, 'UTF-8', 'UTF-8');
 
         $query = $this->init();
 
@@ -119,6 +136,8 @@ class QuoteItemExport extends BaseExport
 
         $query->cursor()
             ->each(function ($quote) {
+
+                /** @var \App\Models\Quote $quote */
                 $this->iterateItems($quote);
             });
 
@@ -133,6 +152,7 @@ class QuoteItemExport extends BaseExport
         $transformed_quote = $this->buildRow($quote);
 
         $transformed_items = [];
+        $currency = $this->company->currency();
 
         foreach ($quote->line_items as $item) {
             $item_array = [];
@@ -143,11 +163,11 @@ class QuoteItemExport extends BaseExport
 
                     $tmp_key = str_replace("item.", "", $key);
 
-                    if($tmp_key == 'type_id') {
+                    if ($tmp_key == 'type_id') {
                         $tmp_key = 'type';
                     }
 
-                    if($tmp_key == 'tax_id') {
+                    if ($tmp_key == 'tax_id') {
                         $tmp_key = 'tax_category';
                     }
 
@@ -162,6 +182,7 @@ class QuoteItemExport extends BaseExport
             $transformed_items = array_merge($transformed_quote, $item_array);
             $entity = $this->decorateAdvancedFields($quote, $transformed_items);
             $entity = array_merge(array_flip(array_values($this->input['report_keys'])), $entity);
+            $entity = $this->convertFloats($entity);
 
             $this->storage_array[] = $entity;
         }
@@ -177,7 +198,7 @@ class QuoteItemExport extends BaseExport
 
             $parts = explode('.', $key);
 
-            if(is_array($parts) && $parts[0] == 'item') {
+            if (is_array($parts) && $parts[0] == 'item') {
                 continue;
             }
 
@@ -186,28 +207,16 @@ class QuoteItemExport extends BaseExport
             } elseif (array_key_exists($key, $transformed_quote)) {
                 $entity[$key] = $transformed_quote[$key];
             } else {
-                // nlog($key);
                 $entity[$key] = $this->decorator->transform($key, $quote);
-                // $entity[$key] = $this->resolveKey($key, $quote, $this->quote_transformer);
             }
         }
 
-        // return $entity;
-        return $this->decorateAdvancedFields($quote, $entity);
+        $entity = $this->decorateAdvancedFields($quote, $entity);
+        return $entity;
+
     }
     private function decorateAdvancedFields(Quote $quote, array $entity): array
     {
-        // if (in_array('currency_id', $this->input['report_keys'])) {
-        //     $entity['currency'] = $quote->client->currency() ? $quote->client->currency()->code : $quote->company->currency()->code;
-        // }
-
-        // if (in_array('client_id', $this->input['report_keys'])) {
-        //     $entity['client'] = $quote->client->present()->name();
-        // }
-
-        // if (in_array('status_id', $this->input['report_keys'])) {
-        //     $entity['status'] = $quote->stringStatus($quote->status_id);
-        // }
 
         if (in_array('quote.assigned_user_id', $this->input['report_keys'])) {
             $entity['quote.assigned_user_id'] = $quote->assigned_user ? $quote->assigned_user->present()->name() : '';

@@ -4,19 +4,20 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Http\Requests\Preview;
 
-use App\Http\Requests\Request;
-use App\Models\PurchaseOrder;
-use App\Models\PurchaseOrderInvitation;
 use App\Models\Vendor;
-use App\Utils\Traits\CleanLineItems;
+use App\Models\PurchaseOrder;
+use App\Http\Requests\Request;
 use App\Utils\Traits\MakesHash;
+use Illuminate\Validation\Rule;
+use App\Utils\Traits\CleanLineItems;
+use App\Models\PurchaseOrderInvitation;
 
 class PreviewPurchaseOrderRequest extends Request
 {
@@ -24,7 +25,6 @@ class PreviewPurchaseOrderRequest extends Request
     use CleanLineItems;
 
     private ?Vendor $vendor = null;
-    private string $entity_plural = '';
 
     /**
      * Determine if the user is authorized to make this request.
@@ -41,9 +41,14 @@ class PreviewPurchaseOrderRequest extends Request
 
     public function rules()
     {
+        
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
+
         $rules = [];
 
         $rules['number'] = ['nullable'];
+        $rules['vendor_id'] = ['required', Rule::exists(Vendor::class, 'id')->where('is_deleted', 0)->where('company_id', $user->company()->id)];
 
         return $rules;
     }
@@ -59,7 +64,7 @@ class PreviewPurchaseOrderRequest extends Request
         $input['balance'] = 0;
         $input['number'] = isset($input['number']) ? $input['number'] : ctrans('texts.live_preview').' #'.rand(0, 1000); //30-06-2023
 
-        if($input['entity_id'] ?? false) {
+        if ($input['entity_id'] ?? false) {
             $input['entity_id'] = $this->decodePrimaryKey($input['entity_id'], true);
         }
 
@@ -72,13 +77,13 @@ class PreviewPurchaseOrderRequest extends Request
     {
         $invitation = false;
 
-        if(! $this->entity_id ?? false) {
+        if (! isset($this->entity_id)) {
             return $this->stubInvitation();
         }
 
         $invitation = PurchaseOrderInvitation::withTrashed()->where('purchase_order_id', $this->entity_id)->first();
 
-        if($invitation) {
+        if ($invitation) {
             return $invitation;
         }
 
@@ -89,7 +94,7 @@ class PreviewPurchaseOrderRequest extends Request
 
     public function getVendor(): ?Vendor
     {
-        if(!$this->vendor) {
+        if (!$this->vendor) {
             $this->vendor = Vendor::query()->with('contacts', 'company', 'user')->withTrashed()->find($this->vendor_id);
         }
 
@@ -130,12 +135,5 @@ class PreviewPurchaseOrderRequest extends Request
         return $entity;
     }
 
-    private function convertEntityPlural(string $entity): self
-    {
-
-        $this->entity_plural = 'purchase_orders';
-
-        return $this;
-    }
 
 }

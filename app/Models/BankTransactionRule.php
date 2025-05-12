@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -27,7 +27,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int|null $client_id
  * @property int|null $vendor_id
  * @property int|null $category_id
- * @property int $is_deleted
+ * @property bool $is_deleted
  * @property int|null $created_at
  * @property int|null $updated_at
  * @property int|null $deleted_at

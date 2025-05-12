@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -48,7 +48,15 @@ class RecurringInvoiceFilters extends QueryFilters
                       $q->where('first_name', 'like', '%'.$filter.'%')
                         ->orWhere('last_name', 'like', '%'.$filter.'%')
                         ->orWhere('email', 'like', '%'.$filter.'%');
-                  });
+                  })
+                    ->orWhereRaw("
+                            JSON_UNQUOTE(JSON_EXTRACT(
+                                JSON_ARRAY(
+                                    JSON_UNQUOTE(JSON_EXTRACT(line_items, '$[*].notes')), 
+                                    JSON_UNQUOTE(JSON_EXTRACT(line_items, '$[*].product_key'))
+                                ), '$[*]')
+                            ) LIKE ?", ['%'.$filter.'%']);
+            //->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(line_items, '$[*].notes')) LIKE ?", ['%'.$filter.'%']);
         });
     }
 
@@ -117,8 +125,12 @@ class RecurringInvoiceFilters extends QueryFilters
     {
 
         $sort_col = explode('|', $sort);
+        
+        if ($sort_col[0] == 'next_send_datetime') {
+            $sort_col[0] = 'next_send_date';
+        }
 
-        if (!is_array($sort_col) || count($sort_col) != 2) {
+        if (!is_array($sort_col) || count($sort_col) != 2 || !in_array($sort_col[0], \Illuminate\Support\Facades\Schema::getColumnListing('recurring_invoices'))) {
             return $this->builder;
         }
 
@@ -129,8 +141,12 @@ class RecurringInvoiceFilters extends QueryFilters
                     ->whereColumn('clients.id', 'recurring_invoices.client_id'), $dir);
         }
 
-        if($sort_col[0] == 'number') {
-            return $this->builder->orderByRaw("ABS(number) {$dir}");
+        if ($sort_col[0] == 'number') {
+            return $this->builder->orderByRaw("REGEXP_REPLACE(number,'[^0-9]+','')+0 " . $dir);
+        }
+
+        if ($sort_col[0] == 'status_id') {
+            return $this->builder->orderBy('status_id', $dir)->orderBy('last_sent_date', $dir);
         }
 
         return $this->builder->orderBy($sort_col[0], $dir);
@@ -158,9 +174,10 @@ class RecurringInvoiceFilters extends QueryFilters
             return $this->builder;
         }
 
+        /** @var array $key_parameters */
         $key_parameters = explode(',', $value);
 
-        if (count($key_parameters)) {
+        if (count($key_parameters) > 0) {
             return $this->builder->where(function ($query) use ($key_parameters) {
                 foreach ($key_parameters as $key) {
                     $query->orWhereJsonContains('line_items', ['product_key' => $key]);
@@ -179,6 +196,7 @@ class RecurringInvoiceFilters extends QueryFilters
      */
     public function next_send_between(string $range = ''): Builder
     {
+        /** @var array $parts */
         $parts = explode('|', $range);
 
         if (!isset($parts[0]) || !isset($parts[1])) {

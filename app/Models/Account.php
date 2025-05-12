@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -31,6 +31,7 @@ use Laracasts\Presenter\PresentableTrait;
  * App\Models\Account
  *
  * @property int $id
+ * @property int $email_quota
  * @property string|null $plan
  * @property string|null $plan_term
  * @property string|null $plan_started
@@ -54,23 +55,24 @@ use Laracasts\Presenter\PresentableTrait;
  * @property string|null $referral_code
  * @property int|null $created_at
  * @property int|null $updated_at
- * @property int $is_scheduler_running
+ * @property bool $is_scheduler_running
  * @property int|null $trial_duration
- * @property int $is_onboarding
- * @property object|null $onboarding
- * @property int $is_migrated
+ * @property bool $is_onboarding
+ * @property object|array|null $onboarding
+ * @property bool $is_migrated
  * @property string|null $platform
  * @property int|null $hosted_client_count
  * @property int|null $hosted_company_count
  * @property string|null $inapp_transaction_id
  * @property bool $set_react_as_default_ap
  * @property bool $is_flagged
- * @property int $is_verified_account
+ * @property bool $is_verified_account
  * @property string|null $account_sms_verification_code
  * @property string|null $account_sms_verification_number
  * @property bool $account_sms_verified
  * @property string|null $bank_integration_account_id
- * @property int $is_trial
+ * @property bool $is_trial
+ * @property int $e_invoice_quota
  * @property-read int|null $bank_integrations_count
  * @property-read int|null $companies_count
  * @property-read int|null $company_users_count
@@ -85,7 +87,6 @@ use Laracasts\Presenter\PresentableTrait;
  * @method static \Illuminate\Database\Eloquent\Builder|Account query()
  * @method static \Illuminate\Database\Eloquent\Builder|BaseModel scope()
  * @method static \Illuminate\Database\Eloquent\Builder|Account first()
- * @method static \Illuminate\Database\Eloquent\Builder|Account with()
  * @method static \Illuminate\Database\Eloquent\Builder|Account count()
  * @method static \Illuminate\Database\Eloquent\Builder|Account where($query)
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\BankIntegration> $bank_integrations
@@ -102,7 +103,7 @@ class Account extends BaseModel
 
     private $free_plan_email_quota = 20;
 
-    private $paid_plan_email_quota = 400;
+    private $paid_plan_email_quota = 300;
 
     /**
      * @var string
@@ -126,6 +127,7 @@ class Account extends BaseModel
         'platform',
         'set_react_as_default_ap',
         'inapp_transaction_id',
+        'e_invoicing_token',
     ];
 
     protected $casts = [
@@ -291,7 +293,7 @@ class Account extends BaseModel
 
     public function isPaid(): bool
     {
-        return Ninja::isNinja() ? ($this->isPaidHostedClient() && !$this->isTrial()) : $this->hasFeature(self::FEATURE_WHITE_LABEL);
+        return Ninja::isNinja() ? $this->isPaidHostedClient() : $this->hasFeature(self::FEATURE_WHITE_LABEL);
     }
 
     public function isPremium(): bool
@@ -363,16 +365,19 @@ class Account extends BaseModel
         return $this->isProClient() && $this->isPaid();
     }
 
+    public function isNewHostedAccount()
+    {
+        return Ninja::isHosted() && Carbon::createFromTimestamp($this->created_at)->diffInWeeks() <= 2;
+    }
+
     public function isTrial(): bool
     {
         if (!Ninja::isNinja()) {
             return false;
         }
 
-        //@27-01-2024 - updates for logic around trials
         return !$this->plan_paid && $this->trial_started && Carbon::parse($this->trial_started)->addDays(14)->gte(now()->subHours(12));
-        // $plan_details = $this->getPlanDetails();
-        // return $plan_details && $plan_details['trial'];
+
     }
 
     public function startTrial($plan): void
@@ -494,7 +499,11 @@ class Account extends BaseModel
             return 0;
         }
 
-        if (Carbon::createFromTimestamp($this->created_at)->diffInWeeks() == 0) {
+        if ($this->email_quota) {
+            return (int)$this->email_quota;
+        }
+
+        if (Carbon::createFromTimestamp($this->created_at)->diffInWeeks() <= 1) {
             return 20;
         }
 
@@ -503,11 +512,13 @@ class Account extends BaseModel
         }
 
         if ($this->isPaid()) {
+            $multiplier = $this->plan == 'enterprise' ? 2 : 1.2;
+
             $limit = $this->paid_plan_email_quota;
-            $limit += Carbon::createFromTimestamp($this->created_at)->diffInMonths() * 50;
+            $limit += Carbon::createFromTimestamp($this->created_at)->diffInMonths() * (20 * $multiplier);
         } else {
             $limit = $this->free_plan_email_quota;
-            $limit += Carbon::createFromTimestamp($this->created_at)->diffInMonths() * 2;
+            $limit += Carbon::createFromTimestamp($this->created_at)->diffInMonths() * 1.5;
         }
 
         return min($limit, 1000);
@@ -616,7 +627,7 @@ class Account extends BaseModel
         $plan_expires = Carbon::parse($this->plan_expires);
 
         if ($plan_expires->gt(now())) {
-            $diff = $plan_expires->diffInDays();
+            $diff = intval(abs($plan_expires->diffInDays()));
 
             if ($diff > 14) {
                 return 0;

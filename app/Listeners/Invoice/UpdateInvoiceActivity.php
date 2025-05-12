@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -21,6 +21,7 @@ class UpdateInvoiceActivity implements ShouldQueue
 {
     protected $activity_repo;
 
+    public $delay = 10;
     /**
      * Create the event listener.
      *
@@ -52,5 +53,6 @@ class UpdateInvoiceActivity implements ShouldQueue
         $fields->invoice_id = $event->invoice->id;
 
         $this->activity_repo->save($fields, $event->invoice, $event->event_vars);
+
     }
 }

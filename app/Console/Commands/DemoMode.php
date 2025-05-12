@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -78,21 +78,19 @@ class DemoMode extends Command
     {
         set_time_limit(0);
 
-        if (config('ninja.is_docker')) {
+        if (config('ninja.is_docker') || Ninja::isHosted()) {
             return;
         }
 
         $this->invoice_repo = new InvoiceRepository();
 
-        $cached_tables = config('ninja.cached_tables');
-
         $this->info('Migrating');
         Artisan::call('migrate:fresh --force');
 
         $this->info('Seeding');
-        Artisan::call('db:seed --force');
 
-        $this->buildCache(true);
+        Artisan::call('db:seed --force');
+        Artisan::call('cache:clear');
 
         $this->info('Seeding Random Data');
         $this->createSmallAccount();
@@ -110,7 +108,9 @@ class DemoMode extends Command
 
         $this->info('Creating Small Account and Company');
 
-        $account = Account::factory()->create();
+        $account = Account::factory()->create([
+            "set_react_as_default_ap" => 0,
+        ]);
         $company = Company::factory()->create([
             'account_id' => $account->id,
             'slack_webhook_url' => config('ninja.notification.slack'),
@@ -621,31 +621,4 @@ class DemoMode extends Command
         return $line_items;
     }
 
-    private function warmCache()
-    {
-        /* Warm up the cache !*/
-        $cached_tables = config('ninja.cached_tables');
-
-        foreach ($cached_tables as $name => $class) {
-            if (! Cache::has($name)) {
-                // check that the table exists in case the migration is pending
-                if (! Schema::hasTable((new $class())->getTable())) {
-                    continue;
-                }
-                if ($name == 'payment_terms') {
-                    $orderBy = 'num_days';
-                } elseif ($name == 'fonts') {
-                    $orderBy = 'sort_order';
-                } elseif (in_array($name, ['currencies', 'industries', 'languages', 'countries', 'banks'])) {
-                    $orderBy = 'name';
-                } else {
-                    $orderBy = 'id';
-                }
-                $tableData = $class::orderBy($orderBy)->get();
-                if ($tableData->count()) {
-                    Cache::forever($name, $tableData);
-                }
-            }
-        }
-    }
 }

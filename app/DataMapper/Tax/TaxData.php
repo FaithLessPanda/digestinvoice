@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -24,7 +24,8 @@ class TaxData
 
     public function __construct(public Response $origin)
     {
-        foreach($origin as $key => $value) {
+        // @phpstan-ignore-next-line
+        foreach ($origin as $key => $value) {
             $this->{$key} = $value;
         }
     }

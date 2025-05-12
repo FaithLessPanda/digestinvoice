@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -35,11 +35,17 @@ class PrePaymentController extends Controller
     /**
      * Show the list of payments.
      *
-     * @return Factory|View
+     * @return Factory|View|\Illuminate\Http\RedirectResponse
      */
     public function index()
     {
+
         $client = auth()->guard('contact')->user()->client;
+
+        if (!$client->getSetting('client_initiated_payments')) {
+            return redirect()->route('client.dashboard');
+        }
+
         $minimum = $client->getSetting('client_initiated_payments_minimum');
         $minimum_amount = $minimum == 0 ? "" : Number::formatMoney($minimum, $client);
 
@@ -48,6 +54,9 @@ class PrePaymentController extends Controller
             'allows_recurring' => true,
             'minimum' => $minimum,
             'minimum_amount' =>  $minimum_amount,
+            'notes' => request()->has('notes') ? request()->input('notes') : "",
+            'amount' => request()->has('amount') ? request()->input('amount') : "",
+            'show' => request()->has('is_recurring') ? "true" : "false",
         ];
 
         return $this->render('pre_payments.index', $data);
@@ -104,6 +113,13 @@ class PrePaymentController extends Controller
             $invoice->balance = Number::formatValue($invoice->balance, $invoice->client->currency());
             return $invoice;
         });
+
+
+        $variables = false;
+
+        if (($invitation = $invoices->first()->invitations()->first() ?? false) && $invoice->client->getSetting('show_accept_invoice_terms')) {
+            $variables = (new HtmlEngine($invitation))->generateLabelsAndValues();
+        }
 
         $data = [
             'settings' => auth()->guard('contact')->user()->client->getMergedSettings(),

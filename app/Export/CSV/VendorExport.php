@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -54,6 +54,7 @@ class VendorExport extends BaseExport
 
         //load the CSV document from a string
         $this->csv = Writer::createFromString();
+        \League\Csv\CharsetConverter::addTo($this->csv, 'UTF-8', 'UTF-8');
 
         if (count($this->input['report_keys']) == 0) {
             $this->input['report_keys'] = array_values($this->vendor_report_keys);
@@ -61,12 +62,15 @@ class VendorExport extends BaseExport
 
         $query = Vendor::query()->with('contacts')
                         ->withTrashed()
-                        ->where('company_id', $this->company->id)
-                        ->where('is_deleted', 0);
+                        ->where('company_id', $this->company->id);
 
-        $query = $this->addDateRange($query);
+        if (!$this->input['include_deleted'] ?? false) {
+            $query->where('is_deleted', 0);
+        }
 
-        if($this->input['document_email_attachment'] ?? false) {
+        $query = $this->addDateRange($query, 'vendors');
+
+        if ($this->input['document_email_attachment'] ?? false) {
             $this->queueDocuments($query);
         }
 
@@ -86,6 +90,8 @@ class VendorExport extends BaseExport
 
         $report = $query->cursor()
                 ->map(function ($resource) {
+
+                    /** @var \App\Models\Vendor $resource */
                     $row = $this->buildRow($resource);
                     return $this->processMetaData($row, $resource);
                 })->toArray();
@@ -103,6 +109,8 @@ class VendorExport extends BaseExport
 
         $query->cursor()
               ->each(function ($vendor) {
+
+                  /** @var \App\Models\Vendor $vendor */
                   $this->csv->insertOne($this->buildRow($vendor));
               });
 
@@ -167,16 +175,16 @@ class VendorExport extends BaseExport
         return $entity;
     }
 
-    private function calculateStatus($vendor)
-    {
-        if ($vendor->is_deleted) {
-            return ctrans('texts.deleted');
-        }
+    // private function calculateStatus($vendor)
+    // {
+    //     if ($vendor->is_deleted) {
+    //         return ctrans('texts.deleted');
+    //     }
 
-        if ($vendor->deleted_at) {
-            return ctrans('texts.archived');
-        }
+    //     if ($vendor->deleted_at) {
+    //         return ctrans('texts.archived');
+    //     }
 
-        return ctrans('texts.active');
-    }
+    //     return ctrans('texts.active');
+    // }
 }

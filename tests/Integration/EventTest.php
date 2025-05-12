@@ -86,7 +86,7 @@ use Tests\MockAccountData;
 use Tests\TestCase;
 
 /**
- * @test
+ * 
  */
 class EventTest extends TestCase
 {
@@ -796,6 +796,7 @@ class EventTest extends TestCase
 
         $data = [
             'name' => $this->faker->firstName,
+            'steps' => "cart,auth.login-or-register",
         ];
 
         $response = $this->withHeaders([
@@ -809,6 +810,7 @@ class EventTest extends TestCase
 
         $data = [
             'name' => $this->faker->firstName,
+            'steps' => "cart,auth.login-or-register",
         ];
 
         $response = $this->withHeaders([
@@ -820,6 +822,7 @@ class EventTest extends TestCase
 
         $data = [
             'ids' => [$arr['data']['id']],
+            'steps' => "cart,auth.login-or-register",
         ];
 
         $response = $this->withHeaders([

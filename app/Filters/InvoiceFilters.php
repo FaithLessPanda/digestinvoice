@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -60,6 +60,10 @@ class InvoiceFilters extends QueryFilters
 
             if (in_array('paid', $status_parameters)) {
                 $invoice_filters[] = Invoice::STATUS_PAID;
+            }
+
+            if (in_array('cancelled', $status_parameters)) {
+                $invoice_filters[] = Invoice::STATUS_CANCELLED;
             }
 
             if (in_array('unpaid', $status_parameters)) {
@@ -121,7 +125,15 @@ class InvoiceFilters extends QueryFilters
                               $q->where('first_name', 'like', '%'.$filter.'%')
                                 ->orWhere('last_name', 'like', '%'.$filter.'%')
                                 ->orWhere('email', 'like', '%'.$filter.'%');
-                          });
+                          })
+                          ->orWhereRaw("
+                            JSON_UNQUOTE(JSON_EXTRACT(
+                                JSON_ARRAY(
+                                    JSON_UNQUOTE(JSON_EXTRACT(line_items, '$[*].notes')), 
+                                    JSON_UNQUOTE(JSON_EXTRACT(line_items, '$[*].product_key'))
+                                ), '$[*]')
+                            ) LIKE ?", ['%'.$filter.'%']);
+            //   ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(line_items, '$[*].notes')) LIKE ?", ['%'.$filter.'%']);
         });
     }
 
@@ -197,14 +209,16 @@ class InvoiceFilters extends QueryFilters
      */
     public function payable(string $client_id = ''): Builder
     {
+
         if (strlen($client_id) == 0) {
             return $this->builder;
         }
 
-        return $this->builder->whereIn('status_id', [Invoice::STATUS_DRAFT, Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL])
-                             ->where('balance', '>', 0)
-                             ->where('is_deleted', 0)
-                             ->where('client_id', $this->decodePrimaryKey($client_id));
+        return $this->builder
+                    ->where('client_id', $this->decodePrimaryKey($client_id))
+                    ->whereIn('status_id', [Invoice::STATUS_DRAFT, Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL])
+                    ->where('is_deleted', 0)
+                    ->where('balance', '>', 0);
     }
 
 
@@ -222,7 +236,12 @@ class InvoiceFilters extends QueryFilters
         if (is_numeric($date)) {
             $date = Carbon::createFromTimestamp((int)$date);
         } else {
-            $date = Carbon::parse($date);
+
+            try {
+                $date = Carbon::parse($date);
+            } catch (\Exception $e) {
+                return $this->builder;
+            }
         }
 
         return $this->builder->where('date', '>=', $date);
@@ -249,59 +268,6 @@ class InvoiceFilters extends QueryFilters
     }
 
     /**
-     * Filter by date range
-     *
-     * @param string $date_range
-     * @return Builder
-     */
-    public function date_range(string $date_range = ''): Builder
-    {
-        $parts = explode(",", $date_range);
-
-        if (count($parts) != 2) {
-            return $this->builder;
-        }
-        try {
-
-            $start_date = Carbon::parse($parts[0]);
-            $end_date = Carbon::parse($parts[1]);
-
-            return $this->builder->whereBetween('date', [$start_date, $end_date]);
-        } catch(\Exception $e) {
-            return $this->builder;
-        }
-
-        return $this->builder;
-    }
-
-    /**
-     * Filter by due date range
-     *
-     * @param string $date_range
-     * @return Builder
-     */
-    public function due_date_range(string $date_range = ''): Builder
-    {
-        $parts = explode(",", $date_range);
-
-        if (count($parts) != 2) {
-            return $this->builder;
-        }
-        try {
-
-            $start_date = Carbon::parse($parts[0]);
-            $end_date = Carbon::parse($parts[1]);
-
-            return $this->builder->whereBetween('due_date', [$start_date, $end_date]);
-        } catch(\Exception $e) {
-            return $this->builder;
-        }
-
-        return $this->builder;
-    }
-
-
-    /**
      * Sorts the list based on $sort.
      *
      * @param string $sort formatted as column|asc
@@ -311,7 +277,7 @@ class InvoiceFilters extends QueryFilters
     {
         $sort_col = explode('|', $sort);
 
-        if (!is_array($sort_col) || count($sort_col) != 2) {
+        if (!is_array($sort_col) || count($sort_col) != 2 || !in_array($sort_col[0], \Illuminate\Support\Facades\Schema::getColumnListing($this->builder->getModel()->getTable()))) {
             return $this->builder;
         }
 
@@ -324,11 +290,11 @@ class InvoiceFilters extends QueryFilters
 
         }
 
-        if($sort_col[0] == 'number') {
-            return $this->builder->orderByRaw('ABS(number) ' . $dir);
+        if ($sort_col[0] == 'number') {
+            return $this->builder->orderByRaw("REGEXP_REPLACE(invoices.number,'[^0-9]+','')+0 " . $dir);
         }
 
-        return $this->builder->orderBy($sort_col[0], $dir);
+        return $this->builder->orderBy("{$this->builder->getQuery()->from}.".$sort_col[0], $dir);
     }
 
     /**

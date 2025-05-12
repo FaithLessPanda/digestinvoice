@@ -24,12 +24,13 @@
                 <input type="hidden" name="company_key" value="{{ $register_company->company_key }}">
                 @endif
 
+                <fieldset :disabled="{{ $formed_disabled ?? 'false' }}">
                 @csrf
 
                 <div class="grid grid-cols-12 gap-4 mt-10">
                     @if($register_company->client_registration_fields)
                     @foreach($register_company->client_registration_fields as $field)
-                        @if($field['visible'])
+                        @if(isset($field['visible']) && $field['visible'])
                             <div class="col-span-12 md:col-span-6">
                                 <section class="flex items-center">
                                     <label
@@ -70,7 +71,7 @@
                                         @foreach(App\Utils\TranslationHelper::getCurrencies() as $currency)
                                             <option
                                                 {{ $currency->id == $register_company->settings->currency_id ? 'selected' : null }} value="{{ $currency->id }}">
-                                                {{ $currency->name }}
+                                                {{ $currency->getName() }}
                                             </option>
                                         @endforeach
                                     </select>
@@ -81,10 +82,9 @@
                                         name="country_id">
                                             <option value="none"></option>
                                         @foreach(App\Utils\TranslationHelper::getCountries() as $country)
-                                            <option
-                                                {{ $country == isset(auth()->user()->client->shipping_country->id) ? 'selected' : null }} value="{{ $country->id }}">
+                                            <option value="{{ $country->id }}">
                                                 {{ $country->iso_3166_2 }}
-                                                ({{ $country->name }})
+                                                ({{ $country->getName() }})
                                             </option>
                                         @endforeach
                                     </select>
@@ -133,7 +133,7 @@
 
                 <div class="flex justify-between items-center mt-8">
 
-                    <a href="{{route('client.login')}}" class="button button-info bg-green-600 text-white">{{ ctrans('texts.login_label') }}</a>
+                    <a href="{{route('client.login')}}" class="button button-info bg-emerald-600 text-white">{{ ctrans('texts.login_label') }}</a>
 
                     <span class="inline-flex items-center" x-data="{ terms_of_service: false, privacy_policy: false }">
                             @if(!empty($register_company->settings->client_portal_terms) || !empty($register_company->settings->client_portal_privacy_policy))
@@ -145,19 +145,33 @@
 
                             @includeWhen(!empty($register_company->settings->client_portal_terms), 'portal.ninja2020.auth.includes.register.popup', ['property' => 'terms_of_service', 'title' => ctrans('texts.terms_of_service'), 'content' => $register_company->settings->client_portal_terms])
                             @includeWhen(!empty($register_company->settings->client_portal_privacy_policy), 'portal.ninja2020.auth.includes.register.popup', ['property' => 'privacy_policy', 'title' => ctrans('texts.privacy_policy'), 'content' => $register_company->settings->client_portal_privacy_policy])
-
                             @error('terms')
                                 <p class="text-red-600">{{ $message }}</p>
                             @enderror
                         </span>
                     </span>
 
+                    @if($show_turnstile)
+                        <div class="col-span-12 flex justify-center mt-4">
+                            <div class="cf-turnstile" data-sitekey="{{ config('ninja.cloudflare.turnstile.site_key') }}"></div>
+                            @error('cf-turnstile-response')
+                                <div class="validation validation-fail">
+                                    {{ $message }}
+                                </div>
+                            @enderror
+                        </div>
+                    @endif
+                    
                     <button class="button button-primary bg-blue-600" :disabled={{ $submitsForm == 'true' ? 'isSubmitted' : 'busy'}}>
                         {{ ctrans('texts.register')}}
                     </button>
 
                 </div>
+                </fieldset>
             </form>
         </div>
     </div>
 @endsection
+@push('footer')
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+@endpush

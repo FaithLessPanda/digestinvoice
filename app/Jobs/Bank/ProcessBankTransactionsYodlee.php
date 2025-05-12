@@ -26,6 +26,7 @@ use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Carbon;
 
 class ProcessBankTransactionsYodlee implements ShouldQueue
 {
@@ -33,10 +34,6 @@ class ProcessBankTransactionsYodlee implements ShouldQueue
     use InteractsWithQueue;
     use Queueable;
     use SerializesModels;
-
-    private string $bank_integration_account_id;
-
-    private BankIntegration $bank_integration;
 
     private ?string $from_date;
 
@@ -49,10 +46,8 @@ class ProcessBankTransactionsYodlee implements ShouldQueue
     /**
      * Create a new job instance.
      */
-    public function __construct(string $bank_integration_account_id, BankIntegration $bank_integration)
+    public function __construct(private string $bank_integration_account_id, private BankIntegration $bank_integration)
     {
-        $this->bank_integration_account_id = $bank_integration_account_id;
-        $this->bank_integration = $bank_integration;
         $this->from_date = $bank_integration->from_date;
         $this->company = $this->bank_integration->company;
     }
@@ -71,8 +66,8 @@ class ProcessBankTransactionsYodlee implements ShouldQueue
 
         set_time_limit(0);
 
-        //Loop through everything until we are up to date
-        $this->from_date = $this->from_date ?: '2021-01-01';
+        //Loop through everything until we are up to date - improve handling of delayed accounts
+        $this->from_date = $this->from_date ? Carbon::parse($this->from_date)->subWeeks(2)->format('Y-m-d') : '2021-01-01';
 
         nlog("Yodlee: Processing transactions for account: {$this->bank_integration->account->key}");
 

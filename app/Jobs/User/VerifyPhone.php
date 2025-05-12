@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -56,7 +56,7 @@ class VerifyPhone implements ShouldQueue
 
         $twilio = new \Twilio\Rest\Client($sid, $token);
 
-        $country = $this->user->account?->companies()?->first()?->country();
+        $country = $this->user->account?->companies()?->first()?->country(); //@phpstan-ignore-line
 
         if (!$country || strlen($this->user->phone) < 2) {
             return;
@@ -67,13 +67,13 @@ class VerifyPhone implements ShouldQueue
         try {
             $phone_number = $twilio->lookups->v1->phoneNumbers($this->user->phone)
                                                 ->fetch(["countryCode" => $countryCode]);
-        } catch(\Exception $e) {
+        } catch (\Exception $e) {
             $this->user->verified_phone_number = false;
             $this->user->save();
             return;
         }
 
-        if ($phone_number && strlen($phone_number->phoneNumber) > 1) {
+        if ($phone_number && strlen($phone_number->phoneNumber) > 1) { //@phpstan-ignore-line
             $this->user->phone = $phone_number->phoneNumber;
             $this->user->verified_phone_number = true;
             $this->user->save();

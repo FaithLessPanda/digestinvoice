@@ -4,43 +4,45 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Http\Controllers;
 
-use App\Models\Account;
-use App\Models\BankIntegration;
-use App\Models\BankTransaction;
-use App\Models\BankTransactionRule;
+use App\Models\User;
+use App\Utils\Ninja;
 use App\Models\Client;
-use App\Models\CompanyGateway;
 use App\Models\Design;
-use App\Models\ExpenseCategory;
-use App\Models\GroupSetting;
-use App\Models\PaymentTerm;
+use App\Utils\Statics;
+use App\Models\Account;
+use App\Models\TaxRate;
+use App\Models\Webhook;
 use App\Models\Scheduler;
 use App\Models\TaskStatus;
-use App\Models\TaxRate;
-use App\Models\User;
-use App\Models\Webhook;
-use App\Transformers\ArraySerializer;
-use App\Transformers\EntityTransformer;
-use App\Utils\Ninja;
-use App\Utils\Statics;
-use App\Utils\Traits\AppSetup;
-use Illuminate\Contracts\Container\BindingResolutionException;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Http\Response;
-use Illuminate\Support\Facades\Auth;
+use App\Models\PaymentTerm;
 use Illuminate\Support\Str;
 use League\Fractal\Manager;
-use League\Fractal\Pagination\IlluminatePaginatorAdapter;
-use League\Fractal\Resource\Collection;
+use App\Models\GroupSetting;
+use Illuminate\Http\Response;
+use App\Models\CompanyGateway;
+use App\Utils\Traits\AppSetup;
+use App\Models\BankIntegration;
+use App\Models\BankTransaction;
+use App\Models\ExpenseCategory;
 use League\Fractal\Resource\Item;
+use App\Models\BankTransactionRule;
+use Illuminate\Support\Facades\Auth;
+use App\Transformers\ArraySerializer;
+use Illuminate\Support\Facades\Schema as DbSchema;
+use App\Transformers\EntityTransformer;
+use League\Fractal\Resource\Collection;
+use Illuminate\Database\Eloquent\Builder;
+use InvoiceNinja\EInvoice\Decoder\Schema;
 use League\Fractal\Serializer\JsonApiSerializer;
+use League\Fractal\Pagination\IlluminatePaginatorAdapter;
+use Illuminate\Contracts\Container\BindingResolutionException;
 
 /**
  * Class BaseController.
@@ -152,6 +154,7 @@ class BaseController extends Controller
           'company.bank_transactions',
           'company.bank_transaction_rules',
           'company.task_schedulers',
+          'company.locations',
         ];
 
     /**
@@ -176,6 +179,7 @@ class BaseController extends Controller
         'company.bank_integrations',
         'company.bank_transaction_rules',
         'company.task_schedulers',
+        'company.locations',
     ];
 
     /**
@@ -261,7 +265,7 @@ class BaseController extends Controller
 
     /**
      * 404 for the client portal.
-     * @return Response 404 response
+     * @return Response| \Illuminate\Http\JsonResponse 404 response
      */
     public function notFoundClient()
     {
@@ -276,9 +280,9 @@ class BaseController extends Controller
     /**
      * API Error response.
      *
-     * @param string    $message        The return error message
+     * @param string|array    $message        The return error message
      * @param int       $httpErrorCode  404/401/403 etc
-     * @return Response                 The JSON response
+     * @return Response| \Illuminate\Http\JsonResponse                 The JSON response
      * @throws BindingResolutionException
      */
     protected function errorResponse($message, $httpErrorCode = 400)
@@ -296,7 +300,7 @@ class BaseController extends Controller
      * Refresh API response with latest cahnges
      *
      * @param  Builder           $query
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      */
     protected function refreshResponse($query)
     {
@@ -459,7 +463,7 @@ class BaseController extends Controller
                     }
                 },
                 'company.tasks' => function ($query) use ($updated_at, $user) {
-                    $query->where('updated_at', '>=', $updated_at)->with('project','documents');
+                    $query->where('updated_at', '>=', $updated_at)->with('project', 'documents');
 
                     if (! $user->hasPermission('view_task')) {
                         $query->whereNested(function ($query) use ($user) {
@@ -521,6 +525,9 @@ class BaseController extends Controller
                     $query->whereNotNull('updated_at');
                 },
                 'company.task_schedulers' => function ($query) {
+                    $query->whereNotNull('updated_at');
+                },
+                'company.locations' => function ($query) {
                     $query->whereNotNull('updated_at');
                 },
             ]
@@ -628,6 +635,9 @@ class BaseController extends Controller
                         $query->where('schedulers.user_id', $user->id);
                     }
                 },
+                'company.locations' => function ($query) use ($created_at) {
+                    $query->where('created_at', '>=', $created_at);
+                },
             ]
         );
 
@@ -652,7 +662,7 @@ class BaseController extends Controller
     /**
      * Passes back the miniloaded data response
      *
-     * @param  Builder $query
+     * @param  mixed $query
      *
      */
     protected function timeConstrainedResponse($query)
@@ -797,7 +807,7 @@ class BaseController extends Controller
                     }
                 },
                 'company.tasks' => function ($query) use ($created_at, $user) {
-                    $query->where('created_at', '>=', $created_at)->with('project.documents','documents');
+                    $query->where('created_at', '>=', $created_at)->with('project.documents', 'documents');
 
                     if (! $user->hasPermission('view_task')) {
                         $query->whereNested(function ($query) use ($user) {
@@ -889,16 +899,11 @@ class BaseController extends Controller
             /** @phpstan-ignore-next-line **/
             $query = $paginator->getCollection();// @phpstan-ignore-line
 
-
             $resource = new Collection($query, $transformer, $this->entity_type);
             $resource->setPaginator(new IlluminatePaginatorAdapter($paginator));
         }
 
-        // else {
-        //     $resource = new Collection($query, $transformer, $this->entity_type);
-        // }
-
-        return $this->response($this->manager->createData($resource)->toArray());
+        return $this->response($this->manager->createData($resource)->toArray()); //@phpstan-ignore-line
     }
 
     /**
@@ -927,9 +932,9 @@ class BaseController extends Controller
                 if ($this->entity_type == BankIntegration::class && !$user->isSuperUser() && $user->hasIntersectPermissions(['create_bank_transaction','edit_bank_transaction','view_bank_transaction'])) {
                     $query->exclude(["balance"]);
                 } //allows us to selective display bank integrations back to the user if they can view / create bank transactions but without the bank balance being present in the response
-                elseif($this->entity_type == TaxRate::class && $user->hasIntersectPermissions(['create_invoice','edit_invoice','create_quote','edit_quote','create_purchase_order','edit_purchase_order'])) {
+                elseif ($this->entity_type == TaxRate::class && $user->hasIntersectPermissions(['create_invoice','edit_invoice','create_quote','edit_quote','create_purchase_order','edit_purchase_order'])) {
                     // need to show tax rates if the user has the ability to create documents.
-                } elseif($this->entity_type == ExpenseCategory::class && $user->hasPermission('create_expense')) {
+                } elseif ($this->entity_type == ExpenseCategory::class && $user->hasPermission('create_expense')) {
                     // need to show expense categories if the user has the ability to create expenses.
                 } else {
                     $query->where('user_id', '=', $user->id);
@@ -937,7 +942,9 @@ class BaseController extends Controller
             } elseif (in_array($this->entity_type, [Design::class, GroupSetting::class, PaymentTerm::class, TaskStatus::class])) {
                 // nlog($this->entity_type);
             } else {
-                $query->where('user_id', '=', $user->id)->orWhere('assigned_user_id', $user->id);
+                $query->where(function ($q) use ($user) { //grouping these together improves query performance significantly)
+                    $q->where('user_id', '=', $user->id)->orWhere('assigned_user_id', $user->id);
+                });
             }
         }
 
@@ -969,7 +976,7 @@ class BaseController extends Controller
      * Sorts the response by keys
      *
      * @param  mixed $response
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      */
     protected function response($response)
     {
@@ -993,7 +1000,18 @@ class BaseController extends Controller
                 /** @var \App\Models\User $user */
                 $user = auth()->user();
 
-                $response['static'] = Statics::company($user->getCompany()->getLocale());
+                $response_data = Statics::company($user->getCompany()->getLocale());
+
+                if (request()->has('einvoice')) {
+
+                    if (class_exists(Schema::class)) {
+                        $ro = new Schema();
+                        $response_data['einvoice_schema'] = $ro('Peppol');
+                    }
+                }
+
+                $response['static'] = $response_data;
+
             }
         }
 
@@ -1010,7 +1028,7 @@ class BaseController extends Controller
      * Item Response
      *
      * @param  mixed $item
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      */
     protected function itemResponse($item)
     {
@@ -1024,7 +1042,7 @@ class BaseController extends Controller
 
         $resource = new Item($item, $transformer, $this->entity_type);
 
-        /** @var \App\Models\User $user */
+        /** @var ?\App\Models\User $user */
         $user = auth()->user();
 
         if ($user && request()->include_static) {
@@ -1093,7 +1111,7 @@ class BaseController extends Controller
     public function flutterRoute()
     {
 
-        if ((bool) $this->checkAppSetup() !== false && $account = Account::first()) {
+        if ((bool) $this->checkAppSetup() !== false && DbSchema::hasTable('accounts') && $account = Account::first()) {
 
             /** @var \App\Models\Account $account */
 
@@ -1146,8 +1164,6 @@ class BaseController extends Controller
             $data['user_agent'] = request()->server('HTTP_USER_AGENT');
 
             $data['path'] = $this->setBuild();
-
-            $this->buildCache();
 
             if (Ninja::isSelfHost() && $account->set_react_as_default_ap) {
                 return response()->view('react.index', $data)->header('X-Frame-Options', 'SAMEORIGIN', false);
@@ -1213,5 +1229,22 @@ class BaseController extends Controller
     public function featureFailure()
     {
         return response()->json(['message' => 'Upgrade to a paid plan for this feature.'], 403);
+    }
+
+
+    /**
+     * GetEncodedFilename
+     *
+     * @param  string $filename
+     * @return string
+     */
+    public function getEncodedFilename(string $filename): string
+    {
+        $ascii_filename = str_replace(['%', '/', '\\'], '', $filename);
+        $ascii_filename = preg_replace('/[\x00-\x1F\x7F-\xFF]/', '', $ascii_filename);
+
+        $encoded_filename = rawurlencode($filename);
+
+        return "filename=\"$ascii_filename\"; filename*=UTF-8''$encoded_filename";
     }
 }

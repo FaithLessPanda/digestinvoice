@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -24,7 +24,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int $bank_integration_id
  * @property int $transaction_id
  * @property string $nordigen_transaction_id
- * @property string $amount
+ * @property float $amount
  * @property string|null $currency_code
  * @property int|null $currency_id
  * @property string|null $account_type
@@ -38,10 +38,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string|null $participant
  * @property string|null $participant_name
  * @property string $invoice_ids
- * @property int|null $expense_id
+ * @property string|null $expense_id
  * @property int|null $vendor_id
  * @property int $status_id
- * @property int $is_deleted
+ * @property bool $is_deleted
  * @property int|null $created_at
  * @property int|null $updated_at
  * @property int|null $deleted_at

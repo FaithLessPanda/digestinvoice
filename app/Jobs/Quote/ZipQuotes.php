@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -37,7 +37,9 @@ class ZipQuotes implements ShouldQueue
 
     public $tries = 1;
 
-    public function __construct(protected array $quote_ids, protected Company $company, protected User $user)
+    public $timeout = 3600;
+
+    public function __construct(protected mixed $quote_ids, protected Company $company, protected User $user)
     {
     }
 
@@ -57,12 +59,17 @@ class ZipQuotes implements ShouldQueue
         $file_name = now()->addSeconds($this->company->timezone_offset())->format('Y-m-d-h-m-s').'_'.str_replace(' ', '_', trans('texts.quotes')).'.zip';
 
         $invitations = QuoteInvitation::query()->with('quote')->whereIn('quote_id', $this->quote_ids)->get();
+
         $invitation = $invitations->first();
         $path = $invitation->contact->client->quote_filepath($invitation);
 
         try {
 
             foreach ($invitations as $invitation) {
+                if ($invitation->quote->client->getSetting('enable_e_invoice')) {
+                    $xml = $invitation->quote->service()->getEDocument();
+                    $zipFile->addFromString($invitation->quote->getFileName("xml"), $xml);
+                }
                 $file = (new \App\Jobs\Entity\CreateRawPdf($invitation))->handle();
                 $zipFile->addFromString($invitation->quote->numberFormatter() . '.pdf', $file);
             }
@@ -84,5 +91,11 @@ class ZipQuotes implements ShouldQueue
         } finally {
             $zipFile->close();
         }
+    }
+
+    public function failed($exception)
+    {
+        nlog("ZipInvoices:: Exception:: => ".$exception->getMessage());
+        config(['queue.failed.driver' => null]);
     }
 }

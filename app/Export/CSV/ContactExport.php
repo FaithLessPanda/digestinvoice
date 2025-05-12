@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -58,9 +58,12 @@ class ContactExport extends BaseExport
         }
 
         $query = ClientContact::query()
-                        ->where('company_id', $this->company->id);
+                        ->where('company_id', $this->company->id)
+                        ->whereHas('client', function ($q) {
+                            $q->where('is_deleted', false);
+                        });
 
-        $query = $this->addDateRange($query);
+        $query = $this->addDateRange($query, 'client_contacts');
 
         return $query;
 
@@ -73,11 +76,13 @@ class ContactExport extends BaseExport
 
         //load the CSV document from a string
         $this->csv = Writer::createFromString();
+        \League\Csv\CharsetConverter::addTo($this->csv, 'UTF-8', 'UTF-8');
 
         //insert the header
         $this->csv->insertOne($this->buildHeader());
 
         $query->cursor()->each(function ($contact) {
+            /** @var \App\Models\ClientContact $contact */
             $this->csv->insertOne($this->buildRow($contact));
         });
 
@@ -97,6 +102,7 @@ class ContactExport extends BaseExport
 
         $report = $query->cursor()
                 ->map(function ($contact) {
+                    /** @var \App\Models\ClientContact $contact */
                     $row = $this->buildRow($contact);
                     return $this->processMetaData($row, $contact);
                 })->toArray();
@@ -151,7 +157,7 @@ class ContactExport extends BaseExport
         }
 
         if (in_array('client.user_id', $this->input['report_keys'])) {
-            $entity['client.user_id'] = $client->user ? $client->user->present()->name() : '';
+            $entity['client.user_id'] = $client->user ? $client->user->present()->name() : '';// @phpstan-ignore-line
         }
 
         if (in_array('client.assigned_user_id', $this->input['report_keys'])) {

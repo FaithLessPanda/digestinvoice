@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -73,7 +73,7 @@ class UserPresenter extends EntityPresenter
             return 'No First Name Available';
         }
 
-        return $this->entity->first_name ?? 'First Name';
+        return $this->entity->first_name ?? ' ';
 
     }
 
@@ -94,5 +94,10 @@ class UserPresenter extends EntityPresenter
     public function phone(): string
     {
         return $this->entity->phone ?? ' ';
+    }
+
+    public function email(): string
+    {
+        return $this->entity->email ?? ' ';
     }
 }

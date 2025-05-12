@@ -4,13 +4,15 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Models;
 
+use App\Casts\AsReferralEarningCollection;
+use App\DataMapper\Referral\ReferralEarning;
 use App\Jobs\Mail\NinjaMailer;
 use App\Jobs\Mail\NinjaMailerJob;
 use App\Jobs\Mail\NinjaMailerObject;
@@ -49,7 +51,7 @@ use Laracasts\Presenter\PresentableTrait;
  * @property int|null $failed_logins
  * @property string|null $referral_code
  * @property string|null $oauth_user_id
- * @property object|null $oauth_user_token
+ * @property object|array|null $oauth_user_token
  * @property string|null $oauth_provider_id
  * @property string|null $google_2fa_secret
  * @property string|null $accepted_terms_version
@@ -60,16 +62,17 @@ use Laracasts\Presenter\PresentableTrait;
  * @property bool $is_deleted
  * @property string|null $last_login
  * @property string|null $signature
- * @property string $password
+ * @property string|null $password
  * @property string $language_id
  * @property string|null $remember_token
  * @property string|null $custom_value1
  * @property string|null $custom_value2
  * @property string|null $custom_value3
  * @property string|null $custom_value4
+ * @property object|null $referral_meta
  * @property int|null $created_at
  * @property int|null $updated_at
- * @property int|null $deleted_at
+ * @property int|null|Carbon $deleted_at
  * @property string|null $oauth_user_refresh_token
  * @property string|null $last_confirmed_email_address
  * @property bool $has_password
@@ -77,6 +80,7 @@ use Laracasts\Presenter\PresentableTrait;
  * @property Carbon|null $oauth_user_token_expiry
  * @property string|null $sms_verification_code
  * @property bool $verified_phone_number
+ * @property array|null $referral_earnings
  * @property-read \App\Models\Account $account
  * @property-read \App\Models\Company $company
  * @property-read mixed $hashed_id
@@ -172,6 +176,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'google_2fa_phone',
         'remember_2fa_token',
         'slack_webhook_url',
+        'referral_earnings',
     ];
 
     protected $casts = [
@@ -181,6 +186,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'created_at'       => 'timestamp',
         'deleted_at'       => 'timestamp',
         'oauth_user_token_expiry' => 'datetime',
+        'referral_meta' => 'object',
+        'referral_earnings' => AsReferralEarningCollection::class,
     ];
 
     public function name()
@@ -226,6 +233,7 @@ class User extends Authenticatable implements MustVerifyEmail
             return $truth->getCompanyToken();
         }
 
+        // if (request()->header('X-API-TOKEN')) {
         if (request()->header('X-API-TOKEN')) {
             return CompanyToken::with(['cu'])->where('token', request()->header('X-API-TOKEN'))->first();
         }
@@ -263,6 +271,7 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         $truth = app()->make(TruthSource::class);
 
+        // @phpstan-ignore-next-line
         if ($this->company) {
             return $this->company;
         } elseif ($truth->getCompany()) {
@@ -519,7 +528,7 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function hasExactPermission(string $permission = '___'): bool
     {
-        return  (stripos($this->token()->cu->permissions, $permission) !== false);
+        return  (stripos($this->token()->cu->permissions ?? '', $permission) !== false);
     }
 
 
@@ -667,7 +676,7 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         $locale = $this->language->locale ?? null;
 
-        if($locale) {
+        if ($locale) {
             App::setLocale($locale);
         }
 
@@ -678,4 +687,65 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return ctrans('texts.user');
     }
+
+
+
+    ////////////////////// Referral earnings ////////////////////////////////////
+
+
+
+    /**
+     * addEntity
+     *
+     * @param  ReferralEarning $entity
+     * @return void
+     */
+    public function addReferral(ReferralEarning $entity)
+    {
+        $entities = $this->referral_earnings;
+
+        if (is_array($entities)) {
+            $entities[] = $entity;
+        } else {
+            $entities = [$entity];
+        }
+
+        $this->referral_earnings = $entities;
+
+        $this->save();
+
+    }
+
+    public function findLatestReferral(string $account_key)
+    {
+
+        return collect($this->referral_earnings)
+                    ->filter(function ($earning) use ($account_key) {
+                        return $earning->account_key === $account_key;
+                    })
+                    ->sortByDesc('period_ending')
+                    ->first();
+
+    }
+
+    public function updateReferral(ReferralEarning $entity)
+    {
+        
+        $earnings = collect($this->referral_earnings);
+
+        $updated_earnings = $earnings->map(function ($earning) use ($entity) {
+            if ($earning->account_key === $entity->account_key &&
+                $earning->period_ending === $entity->period_ending) {
+                return $entity;
+            }
+
+            return $earning;
+        })->toArray();
+
+        $this->referral_earnings = $updated_earnings;
+
+        $this->save();
+
+    }
+
 }

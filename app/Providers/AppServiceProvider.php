@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -29,6 +29,8 @@ use App\Http\Middleware\SetDomainNameDb;
 use Illuminate\Queue\Events\JobProcessing;
 use App\Helpers\Mail\Office365MailTransport;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Symfony\Component\Mailer\Bridge\Brevo\Transport\BrevoTransportFactory;
+use Symfony\Component\Mailer\Transport\Dsn;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -55,7 +57,7 @@ class AppServiceProvider extends ServiceProvider
 
         /* Defines the name used in polymorphic tables */
         Relation::morphMap([
-            'invoices'  => Invoice::class,
+            'invoices' => Invoice::class,
             'proposals' => Proposal::class,
         ]);
 
@@ -119,12 +121,38 @@ class AppServiceProvider extends ServiceProvider
             return $this;
         });
 
+        Mail::extend('brevo', function () {
+            return (new BrevoTransportFactory())->create(
+                new Dsn(
+                    'brevo+api',
+                    'default',
+                    config('services.brevo.secret')
+                )
+            );
+        });
+        Mailer::macro('brevo_config', function (string $brevo_secret) {
+            // @phpstan-ignore /** @phpstan-ignore-next-line **/
+            Mailer::setSymfonyTransport(
+                (new BrevoTransportFactory())->create(
+                    new Dsn(
+                        'brevo+api',
+                        'default',
+                        $brevo_secret
+                    )
+                )
+            );
+
+            return $this;
+        });
+
+
+        //Prevents destructive commands from being run in hosted environments
+        \DB::prohibitDestructiveCommands(Ninja::isHosted());
+
+
     }
 
     public function register(): void
     {
-        if (Ninja::isHosted()) {
-            $this->app->register(\App\Providers\BroadcastServiceProvider::class);
-        }
     }
 }

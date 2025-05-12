@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -29,11 +29,13 @@ class DocumentFilters extends QueryFilters
      */
     public function filter(string $filter = ''): Builder
     {
+
         if (strlen($filter) == 0) {
             return $this->builder;
         }
 
-        return $this->builder;
+        return $this->builder->where('name', 'like', '%'.$filter.'%');
+
     }
 
     /**
@@ -47,6 +49,42 @@ class DocumentFilters extends QueryFilters
      */
     public function client_id(string $client_id = ''): Builder
     {
+
+        return $this->builder->where(function ($query) use ($client_id) {
+            $query->whereHasMorph('documentable', [
+                \App\Models\Invoice::class,
+                \App\Models\Quote::class,
+                \App\Models\Credit::class,
+                \App\Models\Expense::class,
+                \App\Models\Payment::class,
+                \App\Models\Task::class,
+                \App\Models\RecurringExpense::class,
+                \App\Models\RecurringInvoice::class,
+                \App\Models\Project::class,
+            ], function ($q2) use ($client_id) {
+                $q2->where('client_id', $this->decodePrimaryKey($client_id));
+            })->orWhereHasMorph('documentable', [\App\Models\Client::class], function ($q3) use ($client_id) {
+                $q3->where('id', $this->decodePrimaryKey($client_id));
+            });
+        });
+
+    }
+
+    public function type(string $types = '')
+    {
+        $types = explode(',', $types);
+
+        foreach ($types as $type) {
+            match($type) {
+                'private' => $this->builder->where('is_public', 0),
+                'public' => $this->builder->where('is_public', 1),
+                'pdf' => $this->builder->where('type', 'pdf'),
+                'image' => $this->builder->whereIn('type', ['png','jpeg','jpg','gif','svg']),
+                'other' => $this->builder->whereNotIn('type', ['pdf','png','jpeg','jpg','gif','svg']),
+                default => $this->builder,
+            };
+        }
+
         return $this->builder;
     }
 
@@ -60,7 +98,7 @@ class DocumentFilters extends QueryFilters
     {
         $sort_col = explode('|', $sort);
 
-        if (!is_array($sort_col) || count($sort_col) != 2) {
+        if (!is_array($sort_col) || count($sort_col) != 2 || !in_array($sort_col[0], \Illuminate\Support\Facades\Schema::getColumnListing($this->builder->getModel()->getTable()))) {
             return $this->builder;
         }
 

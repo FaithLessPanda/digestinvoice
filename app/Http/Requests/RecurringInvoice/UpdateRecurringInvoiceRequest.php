@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -12,11 +12,12 @@
 namespace App\Http\Requests\RecurringInvoice;
 
 use App\Http\Requests\Request;
-use App\Http\ValidationRules\Project\ValidProjectForClient;
-use App\Utils\Traits\ChecksEntityStatus;
-use App\Utils\Traits\CleanLineItems;
 use App\Utils\Traits\MakesHash;
 use Illuminate\Validation\Rule;
+use App\Utils\Traits\CleanLineItems;
+use App\Utils\Traits\ChecksEntityStatus;
+use App\Http\ValidationRules\EInvoice\ValidInvoiceScheme;
+use App\Http\ValidationRules\Project\ValidProjectForClient;
 
 class UpdateRecurringInvoiceRequest extends Request
 {
@@ -45,21 +46,23 @@ class UpdateRecurringInvoiceRequest extends Request
         $rules = [];
 
         if ($this->file('documents') && is_array($this->file('documents'))) {
-            $rules['documents.*'] = $this->file_validation;
+            $rules['documents.*'] = $this->fileValidation();
         } elseif ($this->file('documents')) {
-            $rules['documents'] = $this->file_validation;
-        }else {
+            $rules['documents'] = $this->fileValidation();
+        } else {
             $rules['documents'] = 'bail|sometimes|array';
         }
 
         if ($this->file('file') && is_array($this->file('file'))) {
-            $rules['file.*'] = $this->file_validation;
+            $rules['file.*'] = $this->fileValidation();
         } elseif ($this->file('file')) {
-            $rules['file'] = $this->file_validation;
+            $rules['file'] = $this->fileValidation();
         }
 
         $rules['number'] = ['bail', 'sometimes', Rule::unique('recurring_invoices')->where('company_id', $user->company()->id)->ignore($this->recurring_invoice->id)];
 
+        $rules['invitations'] = 'sometimes|bail|array';
+        $rules['invitations.*.client_contact_id'] = 'bail|required|distinct';
 
         $rules['client_id'] = ['bail', 'sometimes', Rule::in([$this->recurring_invoice->client_id])];
 
@@ -72,6 +75,11 @@ class UpdateRecurringInvoiceRequest extends Request
         $rules['tax_name3'] = 'bail|sometimes|string|nullable';
         $rules['exchange_rate'] = 'bail|sometimes|numeric';
         $rules['next_send_date'] = 'bail|required|date|after:yesterday';
+        $rules['amount'] = ['sometimes', 'bail', 'numeric', 'max:99999999999999'];
+
+        $rules['e_invoice'] = ['sometimes', 'nullable', new ValidInvoiceScheme()];
+
+        $rules['location_id'] = ['nullable', 'sometimes','bail', Rule::exists('locations', 'id')->where('company_id', $user->company()->id)->where('client_id', $this->recurring_invoice->client_id)];
 
         return $rules;
     }
@@ -84,7 +92,7 @@ class UpdateRecurringInvoiceRequest extends Request
             $input['due_date_days'] = 'terms';
         }
 
-        if(!isset($input['next_send_date']) || $input['next_send_date'] == '') {
+        if (!isset($input['next_send_date']) || $input['next_send_date'] == '') {
             $input['next_send_date'] = now()->format('Y-m-d');
         }
 
@@ -125,7 +133,8 @@ class UpdateRecurringInvoiceRequest extends Request
         }
 
         if (isset($input['line_items'])) {
-            $input['line_items'] = isset($input['line_items']) ? $this->cleanItems($input['line_items']) : [];
+            $input['line_items'] = $this->cleanItems($input['line_items']);
+            $input['amount'] = $this->entityTotalAmount($input['line_items']);
         }
 
         if (array_key_exists('auto_bill', $input) && isset($input['auto_bill'])) {

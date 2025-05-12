@@ -4,7 +4,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2023. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -17,6 +17,7 @@ use App\Utils\Helpers;
 use App\Models\Account;
 use App\Models\Payment;
 use Illuminate\Support\Str;
+use App\Utils\Traits\MakesHash;
 use App\Utils\Traits\MakesDates;
 use App\Jobs\Entity\CreateRawPdf;
 use Illuminate\Support\Facades\App;
@@ -28,6 +29,7 @@ use App\Services\Template\TemplateAction;
 class PaymentEmailEngine extends BaseEmailEngine
 {
     use MakesDates;
+    use MakesHash;
 
     public $client;
 
@@ -66,7 +68,7 @@ class PaymentEmailEngine extends BaseEmailEngine
     {
         App::forgetInstance('translator');
         $t = app('translator');
-        App::setLocale($this->contact->preferredLocale());
+        App::setLocale($this->client->locale());
         $t->replace(Ninja::transformTranslations($this->client->getMergedSettings()));
 
         $this->resolvePaymentTemplate();
@@ -101,7 +103,7 @@ class PaymentEmailEngine extends BaseEmailEngine
 
             $template_in_use = false;
 
-            if($this->is_refund && strlen($this->payment->client->getSetting('payment_refund_design_id')) > 2) {
+            if ($this->is_refund && \App\Models\Design::where('id', $this->decodePrimaryKey($this->payment->client->getSetting('payment_refund_design_id')))->where('is_template', true)->exists()) {
                 $pdf = (new TemplateAction(
                     [$this->payment->hashed_id],
                     $this->payment->client->getSetting('payment_refund_design_id'),
@@ -118,7 +120,7 @@ class PaymentEmailEngine extends BaseEmailEngine
                 $this->setAttachments([['file' => base64_encode($pdf), 'name' => $file_name]]);
                 $template_in_use = true;
 
-            } elseif(!$this->is_refund && strlen($this->payment->client->getSetting('payment_receipt_design_id')) > 2) {
+            } elseif (!$this->is_refund && \App\Models\Design::where('id', $this->decodePrimaryKey($this->payment->client->getSetting('payment_receipt_design_id')))->where('is_template', true)->exists()) {
                 $pdf = (new TemplateAction(
                     [$this->payment->hashed_id],
                     $this->payment->client->getSetting('payment_receipt_design_id'),
@@ -139,7 +141,7 @@ class PaymentEmailEngine extends BaseEmailEngine
 
             $this->payment->invoices->each(function ($invoice) use ($template_in_use) {
 
-                if(!$template_in_use) {
+                if (!$template_in_use) {
                     $pdf = ((new CreateRawPdf($invoice->invitations->first()))->handle());
                     $file_name = $invoice->numberFormatter().'.pdf';
                     $this->setAttachments([['file' => base64_encode($pdf), 'name' => $file_name]]);
@@ -260,6 +262,7 @@ class PaymentEmailEngine extends BaseEmailEngine
         $data['$client.email'] = &$data['$email'];
 
         $data['$client.balance'] = ['value' => Number::formatMoney($this->client->balance, $this->client), 'label' => ctrans('texts.account_balance')];
+        $data['$client.payment_balance'] = ['value' => Number::formatMoney($this->client->payment_balance, $this->client), 'label' => ctrans('texts.payment_balance_on_file')];
         $data['$outstanding'] = ['value' => Number::formatMoney($this->client->balance, $this->client), 'label' => ctrans('texts.account_balance')];
         $data['$client_balance'] = ['value' => Number::formatMoney($this->client->balance, $this->client), 'label' => ctrans('texts.account_balance')];
         $data['$paid_to_date'] = ['value' => Number::formatMoney($this->client->paid_to_date, $this->client), 'label' => ctrans('texts.paid_to_date')];
@@ -408,7 +411,7 @@ class PaymentEmailEngine extends BaseEmailEngine
 
         }
 
-        if(strlen($invoice_list) < 4) {
+        if (strlen($invoice_list) < 4) {
             $invoice_list = Number::formatMoney($this->payment->amount, $this->client) ?: '&nbsp;';
         }
 
@@ -514,14 +517,5 @@ class PaymentEmailEngine extends BaseEmailEngine
         ';
 
 
-        return '
-            <table border="0" cellspacing="0" cellpadding="0" align="center">
-                <tr style="border: 0 !important; ">
-                    <td class="new_button" style="padding: 12px 18px 12px 18px; border-radius:5px;" align="center"> 
-                    <a href="'. $link .'" target="_blank" style="border: 0 !important;font-size: 18px; font-family: Helvetica, Arial, sans-serif; color: #ffffff; text-decoration: none; display: inline-block;">'. $text .'</a>
-                    </td>
-                </tr>
-            </table>
-        ';
     }
 }
